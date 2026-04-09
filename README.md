@@ -88,10 +88,19 @@ Prints status, char count, and a 1000-char preview per URL. `INFO` logs show whi
 
 ---
 
-## Errors
+## Errors & Concerns 
 
 All failures raise `ScraperError` with a descriptive message. Common causes:
-
 - **Timeout** — site has aggressive bot detection (add it to the Indeed-style HTTP path if headless keeps failing)
 - **HTTP 403/404** — posting removed or access denied
 - **All strategies failed** — page is heavily JS-gated or requires authentication
+
+Possible future errors:
+- LinkdIn might change the endpoint for "guest API" 
+- Maybe proxy rotation if a website blocks scrapers by IP address (BrightData, ScraperAPI, Zyte)
+- Specific CSS selectors might stop working when website changes HTML - maybe log url that fails every stragey
+
+Concerns:
+- Parsing will be handled by who? - maybe LLM would be better 
+- scrape_job_description(url) kinda slow, latency of ~3-10 seconds - maybe asynchrounrous processing
+- scraping almost everything - maybe only Job Description, Requirements, and some other stuff

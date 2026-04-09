@@ -18,18 +18,20 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
 # Hardcoded URLs - in case of running without args
 URLS = [
-    "https://www.indeed.com/q-Junior-Data-Scientist-jobs.html?vjk=b65e7472df9f9c50",
-    "https://job-boards.greenhouse.io/anthropic/jobs/5097186008",
-    "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Machine-Learning-Engineer_JR-0105123-1?source=Careers_Website_mlai",
-    "https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4389538828",
+    #"https://www.indeed.com/q-Junior-Data-Scientist-jobs.html?vjk=b65e7472df9f9c50",
+    #"https://job-boards.greenhouse.io/anthropic/jobs/5097186008",
+    #"https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Machine-Learning-Engineer_JR-0105123-1?source=Careers_Website_mlai",
+    #"https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4389538828",
+    #"https://br.indeed.com/?vjk=164a870b314ee996",
+    "https://jp.indeed.com/jobs?q=data&l=&from=searchOnHP&vjk=00e3a345dae9045f"
 ]
 
 
 # Helpers 
 def run(url: str) -> None:
-    print(f"\n{'=*' * 86}")
+    print(f"\n{'=' * 86}")
     print(f"URL: {url}")
-    print('=*' * 86)
+    print('=' * 86)
     try:
         text = scrape_job_description(url)
         print(f"{len(text):,} chars extracted\n")
