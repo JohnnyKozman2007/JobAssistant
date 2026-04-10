@@ -21,9 +21,10 @@ URLS = [
     #"https://www.indeed.com/q-Junior-Data-Scientist-jobs.html?vjk=b65e7472df9f9c50",
     #"https://job-boards.greenhouse.io/anthropic/jobs/5097186008",
     #"https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Machine-Learning-Engineer_JR-0105123-1?source=Careers_Website_mlai",
-    #"https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4389538828",
+    "https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4389538828",
     #"https://br.indeed.com/?vjk=164a870b314ee996",
-    "https://jp.indeed.com/jobs?q=data&l=&from=searchOnHP&vjk=00e3a345dae9045f"
+    #"https://jp.indeed.com/jobs?q=data&l=&from=searchOnHP&vjk=00e3a345dae9045f",
+    
 ]
 
 

@@ -31,6 +31,7 @@ playwright install chromium
 | Domain | Method | Reason |
 |---|---|---|
 | `linkedin.com` | `requests` -> LinkedIn guest API (`/jobs-guest/jobs/api/jobPosting/{id}`) | Clean REST endpoint, no JS needed |
+|`linkdein.com` option 2 |`curl_cffi` -> `cloudscraper` -> `requests`  | guest API theorically can lead to IP ban depending on volume of request|
 | `indeed.com` | `curl_cffi` -> `cloudscraper` -> `requests` | Cloudflare blocks headless browsers; TLS impersonation works at HTTP layer |
 | Everything else | Playwright headless Chromium (`networkidle`) | Handles JS-rendered SPAs, lazy-loaded content |
 
@@ -104,3 +105,7 @@ Concerns:
 - Parsing will be handled by who? - maybe LLM would be better 
 - scrape_job_description(url) kinda slow, latency of ~3-10 seconds - maybe asynchrounrous processing
 - scraping almost everything - maybe only Job Description, Requirements, and some other stuff
+
+LinkdIN:
+- We're using a public guest API to extract LinkdIn JD. It works, but it can lead to IP ban (its not legal). We could use Playwritgh but we would have the user to authenticate first https://dev.to/victorlg98/tutorial-web-scraping-linkedin-jobs-with-playwright-2h7l
+- Use same approach as INdeed (curl_cffi -> cloudscraper -> requests). IT WORKS, but heavier.
