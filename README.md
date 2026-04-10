@@ -31,6 +31,7 @@ playwright install chromium
 | Domain | Method | Reason |
 |---|---|---|
 | `linkedin.com` | `requests` -> LinkedIn guest API (`/jobs-guest/jobs/api/jobPosting/{id}`) | Clean REST endpoint, no JS needed |
+|`linkdein.com` option 2 |`curl_cffi` -> `cloudscraper` -> `requests`  | guest API theorically can lead to IP ban depending on volume of request|
 | `indeed.com` | `curl_cffi` -> `cloudscraper` -> `requests` | Cloudflare blocks headless browsers; TLS impersonation works at HTTP layer |
 | Everything else | Playwright headless Chromium (`networkidle`) | Handles JS-rendered SPAs, lazy-loaded content |
 
@@ -88,10 +89,23 @@ Prints status, char count, and a 1000-char preview per URL. `INFO` logs show whi
 
 ---
 
-## Errors
+## Errors & Concerns 
 
 All failures raise `ScraperError` with a descriptive message. Common causes:
-
 - **Timeout** — site has aggressive bot detection (add it to the Indeed-style HTTP path if headless keeps failing)
 - **HTTP 403/404** — posting removed or access denied
 - **All strategies failed** — page is heavily JS-gated or requires authentication
+
+Possible future errors:
+- LinkdIn might change the endpoint for "guest API" 
+- Maybe proxy rotation if a website blocks scrapers by IP address (BrightData, ScraperAPI, Zyte)
+- Specific CSS selectors might stop working when website changes HTML - maybe log url that fails every stragey
+
+Concerns:
+- Parsing will be handled by who? - maybe LLM would be better 
+- scrape_job_description(url) kinda slow, latency of ~3-10 seconds - maybe asynchrounrous processing
+- scraping almost everything - maybe only Job Description, Requirements, and some other stuff
+
+LinkdIN:
+- We're using a public guest API to extract LinkdIn JD. It works, but it can lead to IP ban (its not legal). We could use Playwritgh but we would have the user to authenticate first https://dev.to/victorlg98/tutorial-web-scraping-linkedin-jobs-with-playwright-2h7l
+- Use same approach as INdeed (curl_cffi -> cloudscraper -> requests). IT WORKS, but heavier.

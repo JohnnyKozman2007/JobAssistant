@@ -252,6 +252,94 @@ def _fetch_linkedin(url: str) -> str:
         raise ScraperError(f"LinkedIn guest API network error: {exc}") from exc
 
 
+def _fetch_linkedin_http(url: str) -> str:
+    """
+    Fetch a LinkedIn job page without a browser, using TLS fingerprint impersonation to bypass LinkedIn's bot detection at the HTTP layer.
+
+    URL normalisation:
+      Any user-pasted LinkedIn URL is rewritten to the " /jobs/view/{id} " form, which serves the full job description as static HTML — no JS rendering or login required.
+
+    Strategy order:
+      1. curl_cffi — TLS fingerprint impersonation (fast, preferred)
+      2. cloudscraper — JS challenge solver (heavier, reliable fallback)
+      3. plain requests — last resort, may return login wall
+
+    Raises ScraperError if all three are blocked or unavailable.
+    """
+    job_id = _extract_linkedin_job_id(url)
+    if job_id:
+        # no login required for public job postings.
+        target = f"https://www.linkedin.com/jobs/view/{job_id}"
+        logger.info("LinkedIn: normalised URL: %s", target)
+    else:
+        target = url
+        logger.info("LinkedIn: using original URL (could not extract job ID)")
+
+    errors: list[str] = []
+
+    # Attempt 1: curl_cffi (multiple TLS profiles)
+    try:
+        from curl_cffi import requests as cffi_requests 
+
+        for profile in _CURL_CFFI_PROFILES:
+            try:
+                resp = cffi_requests.get(
+                    target,
+                    impersonate=profile,
+                    timeout=_REQUESTS_TIMEOUT,
+                    allow_redirects=True,
+                )
+                if resp.status_code == 200 and len(resp.text) > 1000:
+                    logger.info("LinkedIn: curl_cffi succeeded (profile=%s)", profile)
+                    return resp.text
+                logger.debug("LinkedIn: curl_cffi %s -> HTTP %d", profile, resp.status_code)
+            except Exception as exc:
+                logger.debug("LinkedIn: curl_cffi %s error: %s", profile, exc)
+
+        errors.append("curl_cffi: all profiles blocked")
+    except ImportError:
+        errors.append("curl_cffi not installed — pip install curl-cffi")
+
+    # Attempt 2: cloudscraper (JS challenge solver)
+    try:
+        import cloudscraper  # type: ignore[import]
+
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+        resp = scraper.get(target, timeout=_REQUESTS_TIMEOUT)
+        if resp.status_code == 200 and len(resp.text) > 1000:
+            logger.info("LinkedIn: cloudscraper succeeded")
+            return resp.text
+        errors.append(f"cloudscraper: HTTP {resp.status_code}")
+    except ImportError:
+        errors.append("cloudscraper not installed — pip install cloudscraper")
+    except Exception as exc:
+        errors.append(f"cloudscraper error: {exc}")
+
+    # Attempt 3: plain requests (may return login wall, but cheap to try)
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": _USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        resp = session.get(target, timeout=_REQUESTS_TIMEOUT, allow_redirects=True)
+        if resp.status_code == 200 and len(resp.text) > 1000:
+            logger.info("LinkedIn: plain requests succeeded")
+            return resp.text
+        errors.append(f"requests: HTTP {resp.status_code}")
+    except Exception as exc:
+        errors.append(f"requests error: {exc}")
+
+    raise ScraperError(
+        f"LinkedIn blocked all fetch attempts for {target}.\n"
+        f"  Errors: {' | '.join(errors)}\n"
+        "  Fix: pip install curl-cffi cloudscraper"
+    )
+
+
 # ──────────────────────────── Indeed ────────────────────────────
 
 def _extract_indeed_job_key(url: str) -> Optional[str]:
@@ -544,16 +632,19 @@ def scrape_job_description(url: str) -> str:
     logger.info("Scraping: %s", url)
     domain = _domain(url)
 
-    # ────────────── LinkedIn: guest API ──────────────
+    # ────────────── LinkedIn: HTTP fetch (curl_cffi -> cloudscraper -> requests) ──────────────
+    # Fetches /jobs/view/{id} directly at the HTTP layer — no browser, no login required.
+    # LinkedIn's job detail pages are server-rendered, so TLS impersonation via curl_cffi
+    # is enough to bypass bot detection without triggering a login wall.
     if "linkedin.com" in domain:
-        html = _fetch_linkedin(url) # return JD as HTML fragment from LinkedIn guest API
+        html = _fetch_linkedin_http(url)
 
-        # extract HTML text with trafilatura 
         text = _strategy_trafilatura(html)
         if text:
             return text
 
-        # Fallback: load the HTML fragment into a Playwright page so the site-selector and heuristic strategies can run on the parsed DOM.
+        # Parse the static HTML with a throw-away Playwright page (no navigation)
+        # so site-selector and heuristic strategies can still run on the DOM.
         with _browser_page() as page:
             page.set_content(html, wait_until="domcontentloaded")
             text = _strategy_site_selector(page, domain)
@@ -563,6 +654,28 @@ def scrape_job_description(url: str) -> str:
             return text
 
         raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
+
+    # ────────────── LinkedIn: guest API (DISABLED — kept for reference) ──────────────
+    # The guest API reliably returns the full JD but is an unofficial endpoint.
+    # Hitting it at scale risks IP bans. Re-enable if the HTTP fetch above proves
+    # unreliable and the legal risk is acceptable for your use case.
+    #
+    # if "linkedin.com" in domain:
+    #     html = _fetch_linkedin(url)
+    #
+    #     text = _strategy_trafilatura(html)
+    #     if text:
+    #         return text
+    #
+    #     with _browser_page() as page:
+    #         page.set_content(html, wait_until="domcontentloaded")
+    #         text = _strategy_site_selector(page, domain)
+    #         if not text:
+    #             text = _strategy_heuristic(page)
+    #     if text:
+    #         return text
+    #
+    #     raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
 
     # ────────────── Indeed: HTTP-only, no browser (Cloudflare blocks headless) ──────────────
     if "indeed.com" in domain:
