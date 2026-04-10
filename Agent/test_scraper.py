@@ -11,7 +11,7 @@
 
 import sys
 import logging
-from scraper import scrape_job_description, ScraperError
+from Agent.scraper import scrape_job_description, ScraperError
 
 # Configure logging (shows which strategy fired) 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
