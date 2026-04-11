@@ -1,5 +1,5 @@
 '''
-scraper.py Scraper to extract Job Description and relevent INFO from the given URL 
+scraper.py Scraper to extract Job Description and relevant INFO from the given URL
 '''
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ _REQUESTS_TIMEOUT   = 15      # seconds — used for LinkedIn API + Indeed HTTP 
 _NAVIGATION_TIMEOUT = 30_000  # ms — Playwright page.goto timeout
 _SELECTOR_TIMEOUT   = 5_000   # ms — Playwright locator timeout per selector
 _MIN_CONTENT_LEN    = 200     # chars — extraction is considered failed below this
+_MIN_HTTP_RESPONSE_LEN = 1000  # chars — HTTP responses shorter than this are treated as bot-wall pages
 
 # TLS impersonation profiles for curl_cffi, tried in order.
 # Rotating profiles helps when Cloudflare flags a specific fingerprint.
@@ -114,13 +115,13 @@ _SITE_SELECTORS: dict[str, list[str]] = {
 #  HELPERS
 # =====================================================================================
 
-# extract domain name withouth www
+# extract domain name without www
 def _domain(url: str) -> str:
     """Host without 'www.' prefix (e.g. 'www.indeed.com' → 'indeed.com')."""
     host = urlparse(url).netloc.lower()
     return re.sub(r"^www\.", "", host)
 
-# check wheter url is valid fot http or https
+# check whether url is valid for http or https
 def _validate_url(url: str) -> None:
     """Raise ScraperError early for obviously invalid input."""
     parsed = urlparse(url)
@@ -185,10 +186,10 @@ def _browser_page() -> Generator[Page, None, None]:
 
 
 # =====================================================================================
-#  FETCH - site-specific 
+#  FETCH - site-specific
 # =====================================================================================
 
-# ──────────────────────────── LinkedIn ──────────────────────────── 
+# ──────────────────────────── LinkedIn ────────────────────────────
 def _extract_linkedin_job_id(url: str) -> Optional[str]:
     """
     Parse the numeric LinkedIn job ID from common URL formats:
@@ -207,7 +208,7 @@ def _extract_linkedin_job_id(url: str) -> Optional[str]:
         return match.group(1)
     return None
 
-# get the JD by calling the LinkedIn guest API 
+# get the JD by calling the LinkedIn guest API
 def _fetch_linkedin(url: str) -> str:
     """
     Fetch via LinkedIn's public guest API — no auth, no browser overhead.
@@ -224,18 +225,18 @@ def _fetch_linkedin(url: str) -> str:
         )
 
     api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
-    logger.info("LinkedIn guest API: %s", api_url) # log for LInk API url
+    logger.info("LinkedIn guest API: %s", api_url)
 
     session = requests.Session()
-    # set header to mimit real browser, otherwise LinkedIn returns 403 error.  
+    # set header to mimic real browser, otherwise LinkedIn returns 403 error.
     session.headers.update({
         "User-Agent": _USER_AGENT,
         "Accept":     "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     })
-    try: # try request call
+    try:
         resp = session.get(api_url, timeout=_REQUESTS_TIMEOUT, allow_redirects=True)
-        # "handle" errors
+        # handle errors
         if resp.status_code == 404:
             raise ScraperError(
                 f"LinkedIn job {job_id} not found (404) — it may have expired."
@@ -252,49 +253,41 @@ def _fetch_linkedin(url: str) -> str:
         raise ScraperError(f"LinkedIn guest API network error: {exc}") from exc
 
 
-def _fetch_linkedin_http(url: str) -> str:
+# ──────────────────────────── Shared HTTP fallback chain ────────────────────────────
+
+def _fetch_with_http_fallbacks(url: str, *, site_label: str) -> str:
     """
-    Fetch a LinkedIn job page without a browser, using TLS fingerprint impersonation to bypass LinkedIn's bot detection at the HTTP layer.
-
-    URL normalisation:
-      Any user-pasted LinkedIn URL is rewritten to the " /jobs/view/{id} " form, which serves the full job description as static HTML — no JS rendering or login required.
-
-    Strategy order:
+    Fetch url using three strategies in order:
       1. curl_cffi — TLS fingerprint impersonation (fast, preferred)
       2. cloudscraper — JS challenge solver (heavier, reliable fallback)
-      3. plain requests — last resort, may return login wall
+      3. plain requests — last resort, may be blocked
+
+    Returns the response text of the first strategy that yields
+    HTTP 200 with len(text) > _MIN_HTTP_RESPONSE_LEN.
 
     Raises ScraperError if all three are blocked or unavailable.
+    `site_label` is used only in log messages and the final error string.
     """
-    job_id = _extract_linkedin_job_id(url)
-    if job_id:
-        # no login required for public job postings.
-        target = f"https://www.linkedin.com/jobs/view/{job_id}"
-        logger.info("LinkedIn: normalised URL: %s", target)
-    else:
-        target = url
-        logger.info("LinkedIn: using original URL (could not extract job ID)")
-
     errors: list[str] = []
 
     # Attempt 1: curl_cffi (multiple TLS profiles)
     try:
-        from curl_cffi import requests as cffi_requests 
+        from curl_cffi import requests as cffi_requests  # type: ignore[import]
 
         for profile in _CURL_CFFI_PROFILES:
             try:
                 resp = cffi_requests.get(
-                    target,
+                    url,
                     impersonate=profile,
                     timeout=_REQUESTS_TIMEOUT,
                     allow_redirects=True,
                 )
-                if resp.status_code == 200 and len(resp.text) > 1000:
-                    logger.info("LinkedIn: curl_cffi succeeded (profile=%s)", profile)
+                if resp.status_code == 200 and len(resp.text) > _MIN_HTTP_RESPONSE_LEN:
+                    logger.info("%s: curl_cffi succeeded (profile=%s)", site_label, profile)
                     return resp.text
-                logger.debug("LinkedIn: curl_cffi %s -> HTTP %d", profile, resp.status_code)
+                logger.debug("%s: curl_cffi %s -> HTTP %d", site_label, profile, resp.status_code)
             except Exception as exc:
-                logger.debug("LinkedIn: curl_cffi %s error: %s", profile, exc)
+                logger.debug("%s: curl_cffi %s error: %s", site_label, profile, exc)
 
         errors.append("curl_cffi: all profiles blocked")
     except ImportError:
@@ -307,9 +300,9 @@ def _fetch_linkedin_http(url: str) -> str:
         scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
         )
-        resp = scraper.get(target, timeout=_REQUESTS_TIMEOUT)
-        if resp.status_code == 200 and len(resp.text) > 1000:
-            logger.info("LinkedIn: cloudscraper succeeded")
+        resp = scraper.get(url, timeout=_REQUESTS_TIMEOUT)
+        if resp.status_code == 200 and len(resp.text) > _MIN_HTTP_RESPONSE_LEN:
+            logger.info("%s: cloudscraper succeeded", site_label)
             return resp.text
         errors.append(f"cloudscraper: HTTP {resp.status_code}")
     except ImportError:
@@ -317,7 +310,7 @@ def _fetch_linkedin_http(url: str) -> str:
     except Exception as exc:
         errors.append(f"cloudscraper error: {exc}")
 
-    # Attempt 3: plain requests (may return login wall, but cheap to try)
+    # Attempt 3: plain requests (last resort)
     try:
         session = requests.Session()
         session.headers.update({
@@ -325,19 +318,39 @@ def _fetch_linkedin_http(url: str) -> str:
             "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         })
-        resp = session.get(target, timeout=_REQUESTS_TIMEOUT, allow_redirects=True)
-        if resp.status_code == 200 and len(resp.text) > 1000:
-            logger.info("LinkedIn: plain requests succeeded")
+        resp = session.get(url, timeout=_REQUESTS_TIMEOUT, allow_redirects=True)
+        if resp.status_code == 200 and len(resp.text) > _MIN_HTTP_RESPONSE_LEN:
+            logger.info("%s: plain requests succeeded", site_label)
             return resp.text
         errors.append(f"requests: HTTP {resp.status_code}")
     except Exception as exc:
         errors.append(f"requests error: {exc}")
 
     raise ScraperError(
-        f"LinkedIn blocked all fetch attempts for {target}.\n"
+        f"{site_label} blocked all fetch attempts for {url}.\n"
         f"  Errors: {' | '.join(errors)}\n"
         "  Fix: pip install curl-cffi cloudscraper"
     )
+
+
+def _fetch_linkedin_http(url: str) -> str:
+    """
+    Fetch a LinkedIn job page without a browser, using TLS fingerprint impersonation
+    to bypass bot detection at the HTTP layer.
+
+    URL normalisation:
+      Any LinkedIn URL is rewritten to /jobs/view/{id}, which serves the full job
+      description as static HTML — no JS rendering or login required.
+    """
+    job_id = _extract_linkedin_job_id(url)
+    if job_id:
+        target = f"https://www.linkedin.com/jobs/view/{job_id}"
+        logger.info("LinkedIn: normalised URL: %s", target)
+    else:
+        target = url
+        logger.info("LinkedIn: using original URL (could not extract job ID)")
+
+    return _fetch_with_http_fallbacks(target, site_label="LinkedIn")
 
 
 # ──────────────────────────── Indeed ────────────────────────────
@@ -358,20 +371,16 @@ def _extract_indeed_job_key(url: str) -> Optional[str]:
 
 def _fetch_indeed(url: str) -> str:
     """
-    Fetch an Indeed job page without a browser, bypassing Cloudflare via TLS fingerprint impersonation.
+    Fetch an Indeed job page without a browser, bypassing Cloudflare via TLS
+    fingerprint impersonation.
 
-    Indeed serves a JS challenge to headless browsers that never resolves (networkidle never fires), so Playwright is useless here regardless of
-    timeout. Trying stay at the HTTP layer and spoof the TLS fingerprint so Cloudflare never triggers the challenge at all.
+    Indeed serves a JS challenge to headless browsers that never resolves
+    (networkidle never fires), so Playwright is useless here. Staying at the
+    HTTP layer and spoofing the TLS fingerprint avoids the challenge entirely.
 
     URL normalisation:
-    Search-result URLs (/q-*?vjk=...) are rewritten to /viewjob?jk=...which always bakes the full JD into #jobDescriptionText server-side.
-
-    Strategy order:
-      1. curl_cffi  — TLS fingerprint impersonation (fast, no JS engine)
-      2. cloudscraper — JS challenge solver (heavier, reliable fallback)
-      3. plain requests — last resort, usually 403 but cheap to try
-
-    Raises ScraperError if all three are blocked or unavailable.
+      Search-result URLs (/q-*?vjk=...) are rewritten to /viewjob?jk=..., which
+      always bakes the full JD into #jobDescriptionText server-side.
     """
     job_key = _extract_indeed_job_key(url)
     if job_key:
@@ -381,84 +390,22 @@ def _fetch_indeed(url: str) -> str:
         target = url
         logger.info("Indeed: using original URL (no jk/vjk param found)")
 
-    errors: list[str] = []
-
-    # Attempt 1: curl_cffi (multiple TLS profiles) 
-    try:
-        from curl_cffi import requests as cffi_requests  # type: ignore[import]
-
-        for profile in _CURL_CFFI_PROFILES:
-            try:
-                resp = cffi_requests.get(
-                    target,
-                    impersonate=profile,
-                    timeout=_REQUESTS_TIMEOUT,
-                    allow_redirects=True,
-                )
-                if resp.status_code == 200 and len(resp.text) > 1000:
-                    logger.info("Indeed: curl_cffi succeeded (profile=%s)", profile)
-                    return resp.text
-                logger.debug("Indeed: curl_cffi %s -> HTTP %d", profile, resp.status_code)
-            except Exception as exc:
-                logger.debug("Indeed: curl_cffi %s error: %s", profile, exc)
-
-        errors.append("curl_cffi: all profiles blocked")
-    except ImportError:
-        errors.append("curl_cffi not installed — pip install curl-cffi")
-
-    #  Attempt 2: cloudscraper (JS challenge solver) 
-    try:
-        import cloudscraper  
-
-        scraper = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-        resp = scraper.get(target, timeout=_REQUESTS_TIMEOUT)
-        if resp.status_code == 200 and len(resp.text) > 1000:
-            logger.info("Indeed: cloudscraper succeeded")
-            return resp.text
-        errors.append(f"cloudscraper: HTTP {resp.status_code}")
-    except ImportError:
-        errors.append("cloudscraper not installed — pip install cloudscraper")
-    except Exception as exc:
-        errors.append(f"cloudscraper error: {exc}")
-
-    # Attempt 3: plain requests (usually 403, butlets try)
-    try:
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": _USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        resp = session.get(target, timeout=_REQUESTS_TIMEOUT, allow_redirects=True)
-        if resp.status_code == 200 and len(resp.text) > 1000:
-            logger.info("Indeed: plain requests succeeded")
-            return resp.text
-        errors.append(f"requests: HTTP {resp.status_code}")
-    except Exception as exc:
-        errors.append(f"requests error: {exc}")
-
-    raise ScraperError(
-        f"Indeed blocked all fetch attempts for {target}.\n"
-        f"  Errors: {' | '.join(errors)}\n"
-        "  Fix: pip install curl-cffi cloudscraper"
-    )
+    return _fetch_with_http_fallbacks(target, site_label="Indeed")
 
 
-#──────────────────────────── Playwright navigation (all other sites) ──────────────────────────── 
+# ──────────────────────────── Playwright navigation (all other sites) ────────────────────────────
 
-# load webpage in Playwright and wait for the page to load
 def _navigate(page: Page, url: str) -> None:
     """
-    Navigate `page` to `url`, waiting for the network to get idle (JS-rendered content) including SPA, lazy-loaded 
+    Navigate `page` to `url`, waiting for the network to get idle (JS-rendered content)
+    including SPA, lazy-loaded content.
     Raises ScraperError on HTTP errors or navigation failures.
     """
     try:
-        logger.info("Playwright navigating to: %s", url) #log
-        response = page.goto(url, wait_until="networkidle", timeout=_NAVIGATION_TIMEOUT) # go to page 
+        logger.info("Playwright navigating to: %s", url)
+        response = page.goto(url, wait_until="networkidle", timeout=_NAVIGATION_TIMEOUT)
 
-    # "hanlding" errors
+    # handling errors
     except PlaywrightTimeoutError:
         raise ScraperError(f"Page load timed out for {url}")
     except Exception as exc:
@@ -478,34 +425,46 @@ def _navigate(page: Page, url: str) -> None:
     if status >= 400:
         raise ScraperError(f"HTTP {status} fetching {url}")
 
+
+def _load_html_into_page(page: Page, html: str) -> None:
+    """Load static HTML into a Playwright page; tolerates set_content timeouts."""
+    try:
+        page.set_content(html, wait_until="domcontentloaded")
+    except PlaywrightTimeoutError:
+        logger.warning("page.set_content timed out — continuing with partial DOM")
+    except Exception as exc:
+        raise ScraperError(f"Failed to inject HTML into Playwright page: {exc}") from exc
+
+
 # =====================================================================================
 #  Extraction STRATEGIES
 # =====================================================================================
 
-# STRATEGIE 1 - get JD by site-specific CSS selectors using Playwright's live DOM locator API
+# Strategy 1 — get JD by site-specific CSS selectors using Playwright's live DOM locator API
 def _strategy_site_selector(page: Page, domain: str) -> Optional[str]:
     """
-    Strategy 1: Try CSS selectors known to contain the JD on X platform.
+    Strategy 1: Try CSS selectors known to contain the JD on a given platform.
 
-    Playwright's locator API queries the *live* DOM after JS has run, so it works on SPAs (Workday, Ashby, etc.) that would have returned empty containers under the old BeautifulSoup approach.
+    Playwright's locator API queries the *live* DOM after JS has run, so it works
+    on SPAs (Workday, Ashby, etc.) that would have returned empty containers under
+    a static BeautifulSoup approach.
     """
-    # browse for site in constant and select selectors
     for site_key, selectors in _SITE_SELECTORS.items():
-        if site_key not in domain: # ensure to run selecotr in matches domain only
+        # skip selectors not matching this domain
+        if not (domain == site_key or domain.endswith("." + site_key)):
             continue
-        # try each selector until one works, if none work return None and move to next strategy
-        for sel in selectors: 
+        # try each selector in priority order
+        for sel in selectors:
             try:
-                locator = page.locator(sel) # find element that matches selector
+                locator = page.locator(sel)
                 if locator.count() == 0:
                     continue
-                text = _clean_text(locator.first.inner_text(timeout=_SELECTOR_TIMEOUT)) # extract texto 
-                if len(text) >= _MIN_CONTENT_LEN: # check if extracted text is long enough to be a valid JD
+                text = _clean_text(locator.first.inner_text(timeout=_SELECTOR_TIMEOUT))
+                if len(text) >= _MIN_CONTENT_LEN:
                     logger.info(
                         "Extraction: site selector '%s' matched (%d chars)", sel, len(text)
                     )
                     return text
-            # error handling
             except PlaywrightTimeoutError:
                 logger.debug("Selector '%s' timed out", sel)
             except Exception as exc:
@@ -513,38 +472,43 @@ def _strategy_site_selector(page: Page, domain: str) -> Optional[str]:
     return None
 
 
-# STRATEGIE 2 - try using trafilatura lib
+# Strategy 2 — try using trafilatura lib
 def _strategy_trafilatura(html: str) -> Optional[str]:
     """
     Strategy 2: readability-based content extraction via trafilatura.
 
-    Receives the *fully rendered* HTML from page.content() so it sees the same DOM that the browser user would see, not a static HTTP response.
+    Receives the *fully rendered* HTML from page.content() so it sees the same DOM
+    that the browser user would see, not a static HTTP response.
     """
     try:
-        import trafilatura 
+        import trafilatura
 
-        # extract main content
         result = trafilatura.extract(
             html,
             include_comments=False,
             include_tables=True,
             no_fallback=False,
         )
-        if result and len(result) >= _MIN_CONTENT_LEN: # check if extracted text is long enough to be a valid JD
+        if result and len(result) >= _MIN_CONTENT_LEN:
             logger.info("Extraction: trafilatura succeeded (%d chars)", len(result))
             return _clean_text(result)
-    # error handlinggg
+    # error handling
     except ImportError:
         logger.debug("trafilatura not installed — skipping")
     except Exception as exc:
         logger.debug("trafilatura failed: %s", exc)
     return None
 
-# STRATEGIES 3 - 'heuristic' approach; runs custom JavaScript on the page to find the largest text block that doesn't match common noise patterns (nav, header, footer, etc.) 
-_HEURISTIC_JS = """
-() => {
-    const noiseTags    = %s;
-    const noisePattern = /(%s)/i;
+
+# Strategy 3 — heuristic approach: runs custom JavaScript on the page to find the
+# largest text block that doesn't match common noise patterns (nav, header, footer, etc.)
+#
+# The template uses {noise_tags} and {noise_pattern} placeholders filled by
+# _build_heuristic_js() at call time to avoid fragile % string formatting.
+_HEURISTIC_JS_TEMPLATE = """
+() => {{
+    const noiseTags    = {noise_tags};
+    const noisePattern = /({noise_pattern})/i;
 
     // Remove structural boilerplate elements.
     noiseTags.forEach(tag =>
@@ -552,13 +516,13 @@ _HEURISTIC_JS = """
     );
 
     // Remove elements whose class or id matches the noise pattern.
-    document.querySelectorAll('*').forEach(el => {
+    document.querySelectorAll('*').forEach(el => {{
         const cls = typeof el.className === 'string' ? el.className : '';
         const id  = el.id || '';
-        if (noisePattern.test(cls) || noisePattern.test(id)) {
+        if (noisePattern.test(cls) || noisePattern.test(id)) {{
             el.remove();
-        }
-    });
+        }}
+    }});
 
     // Pick the best semantic container — same priority order as the old BS4 code.
     const container = (
@@ -574,23 +538,29 @@ _HEURISTIC_JS = """
     );
 
     return container ? container.innerText : '';
-}
-""" % (
-    # Inject Python values as JS literals.
-    str(_NOISE_TAGS).replace("'", '"'),   # Python list > JS array
-    _NOISE_PATTERN,
-)
+}}
+"""
 
-# inject and run the above JS in the browser to extract the JD text
+
+def _build_heuristic_js() -> str:
+    """Fill the JS template with the module-level noise constants."""
+    noise_tags_js = str(_NOISE_TAGS).replace("'", '"')  # Python list → JS array literal
+    return _HEURISTIC_JS_TEMPLATE.format(
+        noise_tags=noise_tags_js,
+        noise_pattern=_NOISE_PATTERN,
+    )
+
+
 def _strategy_heuristic(page: Page) -> Optional[str]:
     """
-    Strategy 3: run _HEURISTIC_JS inside the browser to strip noise elementsand return innerText of the best semantic container.
+    Strategy 3: run the heuristic JS inside the browser to strip noise elements
+    and return innerText of the best semantic container.
 
-    It runs in-browser it sees the rendered DOM and handles dynamically injected content automatically.
+    Runs in-browser so it sees the rendered DOM and handles dynamically injected
+    content automatically.
     """
     try:
-        raw: str = page.evaluate(_HEURISTIC_JS) # run js (as if were in browser console)
-        # clean whitespace, check length, return if good
+        raw: str = page.evaluate(_build_heuristic_js())
         if raw:
             text = _clean_text(raw)
             if len(text) >= _MIN_CONTENT_LEN:
@@ -610,8 +580,9 @@ def scrape_job_description(url: str) -> str:
     Fetch a job posting URL and return clean plain-text content.
     -------
     Fetch routing:
-    1. Linkedin: requests to the public guest API (no browser overhead)
-    2. others: Playwright headless Chromium (JS rendering, bot bypass)
+    1. LinkedIn: HTTP fetch (curl_cffi → cloudscraper → requests), no browser
+    2. Indeed: same HTTP fetch chain, no browser (Cloudflare blocks headless)
+    3. Others: Playwright headless Chromium (JS rendering, bot bypass)
     -------
     Extraction order:
     1. Site-specific CSS selector  (Playwright locator — works on live DOM)
@@ -627,12 +598,11 @@ def scrape_job_description(url: str) -> str:
     Raises:
     1. ScraperError on invalid URL, blocked access, or failed extraction.
     """
-    # validate url, get domain and log
     _validate_url(url)
     logger.info("Scraping: %s", url)
     domain = _domain(url)
 
-    # ────────────── LinkedIn: HTTP fetch (curl_cffi -> cloudscraper -> requests) ──────────────
+    # ────────────── LinkedIn: HTTP fetch (curl_cffi → cloudscraper → requests) ──────────────
     # Fetches /jobs/view/{id} directly at the HTTP layer — no browser, no login required.
     # LinkedIn's job detail pages are server-rendered, so TLS impersonation via curl_cffi
     # is enough to bypass bot detection without triggering a login wall.
@@ -646,7 +616,7 @@ def scrape_job_description(url: str) -> str:
         # Parse the static HTML with a throw-away Playwright page (no navigation)
         # so site-selector and heuristic strategies can still run on the DOM.
         with _browser_page() as page:
-            page.set_content(html, wait_until="domcontentloaded")
+            _load_html_into_page(page, html)
             text = _strategy_site_selector(page, domain)
             if not text:
                 text = _strategy_heuristic(page)
@@ -655,39 +625,18 @@ def scrape_job_description(url: str) -> str:
 
         raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
 
-    # ────────────── LinkedIn: guest API (DISABLED — kept for reference) ──────────────
-    # The guest API reliably returns the full JD but is an unofficial endpoint.
-    # Hitting it at scale risks IP bans. Re-enable if the HTTP fetch above proves
-    # unreliable and the legal risk is acceptable for your use case.
-    #
-    # if "linkedin.com" in domain:
-    #     html = _fetch_linkedin(url)
-    #
-    #     text = _strategy_trafilatura(html)
-    #     if text:
-    #         return text
-    #
-    #     with _browser_page() as page:
-    #         page.set_content(html, wait_until="domcontentloaded")
-    #         text = _strategy_site_selector(page, domain)
-    #         if not text:
-    #             text = _strategy_heuristic(page)
-    #     if text:
-    #         return text
-    #
-    #     raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
-
     # ────────────── Indeed: HTTP-only, no browser (Cloudflare blocks headless) ──────────────
     if "indeed.com" in domain:
-        html = _fetch_indeed(url)  # curl_cffi > cloudscraper > requests
+        html = _fetch_indeed(url)
 
         text = _strategy_trafilatura(html)
         if text:
             return text
 
-        # Parse the static HTML with a throw-away Playwright page (no navigation) so site-selector and heuristic strategies can still run.
+        # Parse the static HTML with a throw-away Playwright page (no navigation)
+        # so site-selector and heuristic strategies can still run.
         with _browser_page() as page:
-            page.set_content(html, wait_until="domcontentloaded")
+            _load_html_into_page(page, html)
             text = _strategy_site_selector(page, domain)
             if not text:
                 text = _strategy_heuristic(page)
@@ -698,25 +647,29 @@ def scrape_job_description(url: str) -> str:
 
     # ────────────── Others: full Playwright browser ───────────────────────────────
     with _browser_page() as page:
-        _navigate(page, url) # go to page
+        _navigate(page, url)
 
-        # Strategy 1 — CSS selector 
+        # Strategy 1 — CSS selector
         text = _strategy_site_selector(page, domain)
         if text:
             return text
 
-        # Strategy 2 — trafilatura 
-        html = page.content()
-        text = _strategy_trafilatura(html)
+        # Strategy 2 — trafilatura
+        try:
+            html = page.content()
+        except Exception as exc:
+            logger.warning("page.content() failed: %s — skipping trafilatura", exc)
+            html = ""
+        text = _strategy_trafilatura(html) if html else None
         if text:
             return text
 
-        # Strategy 3 — in-browser js
+        # Strategy 3 — in-browser JS
         text = _strategy_heuristic(page)
         if text:
             return text
 
     raise ScraperError(
         f"All extraction strategies failed for {url}. "
-        "The page may have an AGGRESIVVE bot detection or the posting was removed."
+        "The page may have aggressive bot detection or the posting was removed."
     )
