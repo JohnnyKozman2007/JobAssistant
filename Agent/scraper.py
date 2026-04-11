@@ -208,7 +208,7 @@ def _extract_linkedin_job_id(url: str) -> Optional[str]:
         return match.group(1)
     return None
 
-# get the JD by calling the LinkedIn guest API
+# get the JD by calling the LinkedIn guest API (DEPRECATED: now using _fetch_linkedin_http with curl_cffi instead, which is faster and more reliable than cloudscraper for LinkedIn)
 def _fetch_linkedin(url: str) -> str:
     """
     Fetch via LinkedIn's public guest API — no auth, no browser overhead.

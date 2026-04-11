@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 *.pyo
+Agent/__pycache__/
+Agent/.pytest_cache/
+Agent/.ipynb_checkpoints/
 
 # Virtual environments
 venv/
