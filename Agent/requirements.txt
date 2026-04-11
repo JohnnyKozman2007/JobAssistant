@@ -1,5 +1,0 @@
-playwright
-requests
-trafilatura
-cloudscraper
-curl-cffi

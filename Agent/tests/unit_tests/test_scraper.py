@@ -2,8 +2,8 @@
 Unit tests for Agent/scraper.py.
 
 Run:
-    pytest Agent/test_scraper.py -v
-    pytest --cov=Agent.scraper --cov-report=term-missing Agent/test_scraper.py
+    pytest tests/unit_tests/test_scraper.py -v
+    pytest --cov=agent.scraper --cov-report=term-missing tests/unit_tests/test_scraper.py
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch, call
 import pytest
 
-from Agent.scraper import (
+from agent.scraper import (
     ScraperError,
     _domain,
     _validate_url,
@@ -139,7 +139,7 @@ class TestFetchWithHttpFallbacks:
         with patch.dict("sys.modules", {"curl_cffi": MagicMock(), "curl_cffi.requests": MagicMock()}):
             import curl_cffi.requests as cffi_req
             cffi_req.get = MagicMock(return_value=mock_resp)
-            with patch("Agent.scraper._CURL_CFFI_PROFILES", ["chrome124"]):
+            with patch("agent.scraper._CURL_CFFI_PROFILES", ["chrome124"]):
                 with patch("builtins.__import__", side_effect=lambda name, *a, **kw: (
                     cffi_req if name == "curl_cffi.requests" else __import__(name, *a, **kw)
                 )):
@@ -182,7 +182,7 @@ class TestFetchWithHttpFallbacks:
 
 class TestFetchLinkedInHttp:
     def test_url_normalisation_with_job_id(self):
-        with patch("Agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
+        with patch("agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
             mock_fetch.return_value = "html content"
             _fetch_linkedin_http("https://www.linkedin.com/jobs/view/4115507396")
             called_url = mock_fetch.call_args[0][0]
@@ -191,7 +191,7 @@ class TestFetchLinkedInHttp:
 
     def test_url_normalisation_without_job_id(self):
         original = "https://www.linkedin.com/jobs/search"
-        with patch("Agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
+        with patch("agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
             mock_fetch.return_value = "html content"
             _fetch_linkedin_http(original)
             called_url = mock_fetch.call_args[0][0]
@@ -204,7 +204,7 @@ class TestFetchLinkedInHttp:
 
 class TestFetchIndeed:
     def test_url_normalisation_with_jk(self):
-        with patch("Agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
+        with patch("agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
             mock_fetch.return_value = "html content"
             _fetch_indeed("https://www.indeed.com/viewjob?jk=abc123")
             called_url = mock_fetch.call_args[0][0]
@@ -213,7 +213,7 @@ class TestFetchIndeed:
 
     def test_url_normalisation_no_key(self):
         original = "https://www.indeed.com/jobs"
-        with patch("Agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
+        with patch("agent.scraper._fetch_with_http_fallbacks") as mock_fetch:
             mock_fetch.return_value = "html content"
             _fetch_indeed(original)
             called_url = mock_fetch.call_args[0][0]
@@ -412,51 +412,51 @@ class TestScrapeJobDescription:
 
     def test_linkedin_trafilatura_path(self):
         long_text = "a" * (_MIN_CONTENT_LEN + 1)
-        with patch("Agent.scraper._fetch_linkedin_http", return_value="<html>job</html>"):
-            with patch("Agent.scraper._strategy_trafilatura", return_value=long_text):
+        with patch("agent.scraper._fetch_linkedin_http", return_value="<html>job</html>"):
+            with patch("agent.scraper._strategy_trafilatura", return_value=long_text):
                 result = scrape_job_description("https://www.linkedin.com/jobs/view/123456789")
         assert result == long_text
 
     def test_linkedin_falls_to_browser_strategies(self):
         long_text = "a" * (_MIN_CONTENT_LEN + 1)
         mock_page = _make_page(inner_text=long_text)
-        with patch("Agent.scraper._fetch_linkedin_http", return_value="<html/>"):
-            with patch("Agent.scraper._strategy_trafilatura", return_value=None):
-                with patch("Agent.scraper._browser_page") as mock_ctx:
+        with patch("agent.scraper._fetch_linkedin_http", return_value="<html/>"):
+            with patch("agent.scraper._strategy_trafilatura", return_value=None):
+                with patch("agent.scraper._browser_page") as mock_ctx:
                     mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_page)
                     mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-                    with patch("Agent.scraper._load_html_into_page"):
-                        with patch("Agent.scraper._strategy_site_selector", return_value=long_text):
+                    with patch("agent.scraper._load_html_into_page"):
+                        with patch("agent.scraper._strategy_site_selector", return_value=long_text):
                             result = scrape_job_description("https://www.linkedin.com/jobs/view/123456789")
         assert result == long_text
 
     def test_indeed_routing(self):
         long_text = "a" * (_MIN_CONTENT_LEN + 1)
-        with patch("Agent.scraper._fetch_indeed", return_value="<html/>"):
-            with patch("Agent.scraper._strategy_trafilatura", return_value=long_text):
+        with patch("agent.scraper._fetch_indeed", return_value="<html/>"):
+            with patch("agent.scraper._strategy_trafilatura", return_value=long_text):
                 result = scrape_job_description("https://www.indeed.com/viewjob?jk=abc123")
         assert result == long_text
 
     def test_generic_site_css_selector_path(self):
         long_text = "a" * (_MIN_CONTENT_LEN + 1)
         mock_page = _make_page(inner_text=long_text)
-        with patch("Agent.scraper._browser_page") as mock_ctx:
+        with patch("agent.scraper._browser_page") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_page)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            with patch("Agent.scraper._navigate"):
-                with patch("Agent.scraper._strategy_site_selector", return_value=long_text):
+            with patch("agent.scraper._navigate"):
+                with patch("agent.scraper._strategy_site_selector", return_value=long_text):
                     result = scrape_job_description("https://greenhouse.io/jobs/123")
         assert result == long_text
 
     def test_all_strategies_fail_raises_scraper_error(self):
         mock_page = _make_page()
-        with patch("Agent.scraper._browser_page") as mock_ctx:
+        with patch("agent.scraper._browser_page") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_page)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            with patch("Agent.scraper._navigate"):
-                with patch("Agent.scraper._strategy_site_selector", return_value=None):
-                    with patch("Agent.scraper._strategy_trafilatura", return_value=None):
-                        with patch("Agent.scraper._strategy_heuristic", return_value=None):
+            with patch("agent.scraper._navigate"):
+                with patch("agent.scraper._strategy_site_selector", return_value=None):
+                    with patch("agent.scraper._strategy_trafilatura", return_value=None):
+                        with patch("agent.scraper._strategy_heuristic", return_value=None):
                             with pytest.raises(ScraperError, match="All extraction strategies failed"):
                                 scrape_job_description("https://example.com/job")
 
@@ -466,11 +466,12 @@ class TestScrapeJobDescription:
         mock_page.content.side_effect = RuntimeError("content failed")
         mock_page.evaluate.return_value = long_text
         mock_page.locator.return_value.count.return_value = 0
-        with patch("Agent.scraper._browser_page") as mock_ctx:
+        with patch("agent.scraper._browser_page") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_page)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            with patch("Agent.scraper._navigate"):
-                with patch("Agent.scraper._strategy_site_selector", return_value=None):
-                    with patch("Agent.scraper._strategy_heuristic", return_value=long_text):
+            with patch("agent.scraper._navigate"):
+                with patch("agent.scraper._strategy_site_selector", return_value=None):
+                    with patch("agent.scraper._strategy_heuristic", return_value=long_text):
                         result = scrape_job_description("https://example.com/job")
         assert result == long_text
+
