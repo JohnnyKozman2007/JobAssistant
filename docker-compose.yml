@@ -3,8 +3,9 @@ services:
     build:
       context: ./Agent
       dockerfile: Dockerfile
+    working_dir: /app/Agent
     ports:
       - 8888:8888
     volumes:
       - ./Agent:/app/Agent
-    command: jupyter lab --ip=0.0.0.0 --port 8888 --no-browser --allow-root
+    command: ["jupyter", "lab", "--ip=0.0.0.0", "--port", "8888", "--no-browser", "--allow-root"]
