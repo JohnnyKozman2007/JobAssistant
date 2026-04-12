@@ -15,9 +15,11 @@ services:
       dockerfile: Dockerfile
     working_dir: /app/Agent
     ports:
-      - 8888:8888
+      - "8888:8888"
     volumes:
       - ./Agent:/app/Agent
+    expose:
+      - "8001"
     command:
       [
         "jupyter",
@@ -28,6 +30,20 @@ services:
         "--no-browser",
         "--allow-root",
       ]
+
+  backend:
+    build:
+      context: ./BackEnd
+      dockerfile: Dockerfile.dev
+    ports:
+      - 8000:8000
+    volumes:
+      - ./BackEnd:/app/BackEnd
+    env_file:
+      - .env
+    environment:
+      - AGENT_BASE_URL=${AGENT_BASE_URL}
+    command: uvicorn BackEnd.app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   vite_node_modules:
