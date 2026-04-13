@@ -200,8 +200,9 @@ ainvoke({"job_url": "...", "resume_text": "..."})
 - `_parse_json` now validates that the parsed result is a `dict` before returning. Previously, valid JSON that was not an object (e.g. a JSON array) would pass through silently and crash downstream with a confusing `TypeError`.
 
 **`src/agent/__init__.py`** — removed the `from agent.graph import graph` re-export; file is now a bare package marker.
-- The re-export caused `from agent.scraper import ...` to silently load the full chain: `graph → scorer → LLM client`. Any import from the `agent` package — even the scraper — would trigger `GOOGLE_API_KEY` validation and load LangGraph and LangChain into memory.
+- The re-export caused `from agent.scraper import ...` to silently load the full chain (was pulling the entire graph at import time, which returned a validation error when running unit tests): `graph → scorer → LLM client`. Any import from the `agent` package — even the scraper — would trigger `GOOGLE_API_KEY` validation and load LangGraph and LangChain into memory.
 - Removing it enforces true module independence: importing `agent.scraper` loads only the scraper. The downside is that `from agent import graph` no longer works; callers must use `from agent.graph import graph` directly, which is more explicit about where the object lives.
+- We could use the old `from agent.graph import graph` to allow `from agent import graph`, but that would load LangGraph, LangChain and the LLM client even if only `agent.scraper` was imported 
 
 **`pyproject.toml`** — added `langchain-google-genai>=2.0.0`.
 - Required to call Gemini via LangChain. Using LangChain (rather than the raw Google SDK) gives automatic LangSmith tracing with zero extra code.
@@ -246,3 +247,6 @@ ainvoke({"job_url": "...", "resume_text": "..."})
 | # | Issue | Status | Fix applied |
 |---|---|---|---|
 | 1 | LinkedIn collection URLs (e.g. `/jobs/collections/...?currentJobId=123`) scrape the full page including the sidebar job list, adding noise and wasting tokens. | **Fixed** | `_extract_linkedin_job_id` in `scraper.py` rewrites to `/jobs/view/{id}` before fetching. `_clean_linkedin_text` truncates at footer markers post-extraction. |
+| 2 | LLM in high demand | **Fixed** | Retry with backoff (3 attempts waiting 1-4 seconds); in case all retries fails, the model fallbacks to a simplier model `gemini-3.1-flash-lite-preview`
+|3| LLM API KEY quota reached| **Fixed**| Instead of retry (wasting quota), it fallbacks to a lower model immediately|
+|4| Gemini 3.1 flash lite returns list of content instead of string| **Fixed**| _extract_text helper to handle those cases.|
