@@ -196,8 +196,12 @@ ainvoke({"job_url": "...", "resume_text": "..."})
 
 **`src/agent/scorer.py`** — several fixes applied after code review.
 - `score_resume` is `async def` and uses `await llm.ainvoke()`. The previous synchronous `llm.invoke()` blocked the event loop during the Gemini API network round-trip.
-- LLM client (`_llm`) moved to module level with `request_timeout=60`. Previously re-instantiated on every call (re-read credentials, re-initialised transport). The timeout prevents a hung API call from stalling the pipeline indefinitely.
+- `_llm` is now lazily initialised via `_get_llm()` instead of being instantiated at module scope. `ChatGoogleGenerativeAI.__init__` validates `GOOGLE_API_KEY` immediately, so a module-level instance caused every import of the package to crash in environments without the key set (e.g. unit tests, CI). The lazy pattern defers that validation to the first actual call to `score_resume`. The single-instance / transport-reuse benefit is preserved — the client is still created once and cached.
 - `_parse_json` now validates that the parsed result is a `dict` before returning. Previously, valid JSON that was not an object (e.g. a JSON array) would pass through silently and crash downstream with a confusing `TypeError`.
+
+**`src/agent/__init__.py`** — removed the `from agent.graph import graph` re-export; file is now a bare package marker.
+- The re-export caused `from agent.scraper import ...` to silently load the full chain: `graph → scorer → LLM client`. Any import from the `agent` package — even the scraper — would trigger `GOOGLE_API_KEY` validation and load LangGraph and LangChain into memory.
+- Removing it enforces true module independence: importing `agent.scraper` loads only the scraper. The downside is that `from agent import graph` no longer works; callers must use `from agent.graph import graph` directly, which is more explicit about where the object lives.
 
 **`pyproject.toml`** — added `langchain-google-genai>=2.0.0`.
 - Required to call Gemini via LangChain. Using LangChain (rather than the raw Google SDK) gives automatic LangSmith tracing with zero extra code.
