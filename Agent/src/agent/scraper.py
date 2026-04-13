@@ -61,6 +61,18 @@ _NOISE_TAGS: list[str] = [
     "button", "input", "select", "textarea",
 ]
 
+# Markers that signal the end of the actual job description on LinkedIn pages.
+# LinkedIn appends fixed metadata sections and similar-job listings after the
+# description.  These strings appear on every LinkedIn job page in English
+# regardless of the posting language.
+_LINKEDIN_FOOTER_MARKERS: list[str] = [
+    "Seniority level",
+    "Referrals increase your chances",
+    "Similar jobs",
+    "People also viewed",
+    "Sign in to create job alert",
+]
+
 
 # Site-specific CSS selectors ordered by decreasing specificity.
 _SITE_SELECTORS: dict[str, list[str]] = {
@@ -138,6 +150,31 @@ def _clean_text(raw: str) -> str:
     text = re.sub(r"[ \t]+",   " ",    raw)
     text = re.sub(r" *\n *",   "\n",   text)
     text = re.sub(r"\n{3,}",   "\n\n", text)
+    return text.strip()
+
+
+def _clean_linkedin_text(text: str) -> str:
+    """Trim LinkedIn metadata and similar-jobs noise from extracted text.
+
+    LinkedIn job pages append a fixed set of metadata sections (Seniority level,
+    Employment type, …) and promotional blocks (Similar jobs, People also viewed)
+    after the job description.  This function truncates the text at the earliest
+    known footer marker and strips CTA lines from the top.
+
+    These markers appear in English on every LinkedIn job page regardless of the
+    posting language, so the approach is language- and class-name-independent.
+    """
+    # Truncate at the earliest footer marker.
+    earliest = len(text)
+    for marker in _LINKEDIN_FOOTER_MARKERS:
+        idx = text.find(marker)
+        if idx != -1 and idx < earliest:
+            earliest = idx
+    text = text[:earliest]
+
+    # Remove "See who X has hired for this role" CTA lines near the top.
+    text = re.sub(r"See who .+ has hired for this role\n?", "", text)
+
     return text.strip()
 
 
@@ -609,21 +646,32 @@ def scrape_job_description(url: str) -> str:
     if "linkedin.com" in domain:
         html = _fetch_linkedin_http(url)
 
-        text = _strategy_trafilatura(html)
-        if text:
-            return text
-
-        # Parse the static HTML with a throw-away Playwright page (no navigation)
-        # so site-selector and heuristic strategies can still run on the DOM.
+        # Extraction order for LinkedIn full-page HTML:
+        #
+        # 1. Heuristic JS (first, most robust): strips structural noise from the DOM
+        #    before reading any text — removes <aside> tags (where the sidebar lives)
+        #    and any element whose class/id contains "recommend", "sidebar", "related",
+        #    etc. (see _NOISE_TAGS / _NOISE_PATTERN). Not dependent on LinkedIn-specific
+        #    class names, so it survives frontend redesigns.
+        #
+        # 2. CSS selectors: precise but brittle — LinkedIn class names change on
+        #    each frontend deploy, so this is a secondary fallback only.
+        #
+        # 3. Trafilatura: extracts the largest coherent text block. On the full LinkedIn
+        #    page this includes sidebar job titles, so it is the last resort.
         with _browser_page() as page:
             _load_html_into_page(page, html)
-            text = _strategy_site_selector(page, domain)
+            text = _strategy_heuristic(page)
             if not text:
-                text = _strategy_heuristic(page)
-        if text:
-            return text
+                text = _strategy_site_selector(page, domain)
 
-        raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
+        if not text:
+            text = _strategy_trafilatura(html)
+
+        if not text:
+            raise ScraperError(f"All extraction strategies failed for LinkedIn job: {url}")
+
+        return _clean_linkedin_text(text)
 
     # ────────────── Indeed: HTTP-only, no browser (Cloudflare blocks headless) ──────────────
     if "indeed.com" in domain:
