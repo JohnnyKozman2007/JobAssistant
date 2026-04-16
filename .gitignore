@@ -25,3 +25,9 @@ env/
 # ── Logs and databases ────────────────────────────────────────────────────────
 *.log
 *.db
+
+# Node / Next
+node_modules/
+.next/
+Frontend/node_modules/
+Frontend/.next/
