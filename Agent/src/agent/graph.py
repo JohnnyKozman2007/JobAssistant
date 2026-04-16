@@ -1,54 +1,84 @@
-"""LangGraph single-node graph template.
+"""Resume Scorer Agent — LangGraph pipeline.
 
-Returns a predefined response. Replace logic and configuration as needed.
+Two-node workflow:
+    scrape_job -> run_scorer
+
+    1. scrape_job : Fetches and cleans the job info from the given URL.
+    2. run_scorer : Sends the resume + job description to Gemini 2.5 Flash and returns a structured JSON assessment.
+
+Example usage::
+    result = await graph.ainvoke({
+        "job_url": "https://www.linkedin.com/jobs/view/...",
+        "resume_text": "Jane Doe | ...",
+    })
+    score = result["score_result"]  # dict matching the scorer output schema
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Any, Dict
 
 from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
-from typing_extensions import TypedDict
+
+from agent.scraper import scrape_job_description
+from agent.scorer import score_resume
 
 
-class Context(TypedDict):
-    """Context parameters for the agent.
-
-    Set these when creating assistants OR when invoking the graph.
-    See: https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/
-    """
-
-    my_configurable_param: str
+# ── State ─────────────────────────────────────────────────────────────────────
 
 
 @dataclass
 class State:
-    """Input state for the agent.
+    """Agent state.
 
-    Defines the initial structure of incoming data.
-    See: https://langchain-ai.github.io/langgraph/concepts/low_level/#state
+    Input fields are provided at invocation time.
+    Output fields are populated by the nodes during execution.
+
+    Attributes:
+        job_url: Full URL of the job posting to analyse.
+        resume_text: Candidate resume as plain text.
+        job_description: Scraped and cleaned job description (set by scrape_job).
+        score_result: Structured JSON assessment from the LLM (set by run_scorer).
     """
 
-    changeme: str = "example"
+    # ── inputs (required at invoke time) ──────────────────────────────────────
+    job_url: str
+    resume_text: str
+
+    # ── outputs (populated during execution) ──────────────────────────────────
+    job_description: str = ""
+    score_result: dict = field(default_factory=dict)
 
 
-async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
-    """Process input and returns output.
-
-    Can use runtime context to alter behavior.
-    """
-    return {
-        "changeme": "output from call_model. "
-        f"Configured with {(runtime.context or {}).get('my_configurable_param')}"
-    }
+# ── Nodes ─────────────────────────────────────────────────────────────────────
 
 
-# Define the graph
+async def scrape_job(state: State) -> Dict[str, Any]:
+    """Fetch and clean the job description from the posting URL."""
+    # scrape_job_description is synchronous and blocks I/O (network + Playwright). Run it in a thread pool so it does not block the event loop.
+    # LinkedIn collection-URL normalisation (currentJobId -> /jobs/view/) is handled internally by the scraper's _extract_linkedin_job_id helper.
+    jd_text = await asyncio.to_thread(scrape_job_description, state.job_url)
+    return {"job_description": jd_text}
+
+
+async def run_scorer(state: State) -> Dict[str, Any]:
+    """Score the resume against the scraped job description."""
+    result = await score_resume(
+        jd_text=state.job_description,
+        resume_text=state.resume_text,
+    )
+    return {"score_result": result}
+
+
+# ── Graph ─────────────────────────────────────────────────────────────────────
+
 graph = (
-    StateGraph(State, context_schema=Context)
-    .add_node(call_model)
-    .add_edge("__start__", "call_model")
-    .compile(name="New Graph")
+    StateGraph(State)
+    .add_node(scrape_job)
+    .add_node(run_scorer)
+    .add_edge("__start__", "scrape_job")
+    .add_edge("scrape_job", "run_scorer")
+    .compile(name="Resume Scorer")
 )

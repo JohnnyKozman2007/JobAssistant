@@ -11,10 +11,14 @@ WORKDIR /app/Agent
 RUN pip install --no-cache-dir --upgrade pip uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# Install dependencies only (skip the project itself — src/ doesn't exist yet).
+# Dev group is included so pytest / ruff / mypy are available inside the container.
+RUN uv sync --frozen --no-install-project
 RUN playwright install --with-deps chromium
 
+# Copy source and install the project package (including dev group)
 COPY . .
+RUN uv sync --frozen
 
 EXPOSE 8888
 
