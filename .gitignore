@@ -1,20 +1,27 @@
+# ── OS / editor ───────────────────────────────────────────────────────────────
 .DS_Store
+.vscode/
+.idea/
+
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
-Agent/__pycache__/
-Agent/.pytest_cache/
-Agent/.ipynb_checkpoints/
+*.egg-info/
 
-# Virtual environments
+# ── Environments ──────────────────────────────────────────────────────────────
 venv/
 env/
 .env
 
-# IDE files
-.vscode/
-.idea/
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+# Checkpoint folders created automatically next to any .ipynb file
+**/.ipynb_checkpoints/
 
-# Logs and databases
+# ── LangGraph ─────────────────────────────────────────────────────────────────
+# Local LangGraph dev-server state
+**/.langgraph_api/
+
+# ── Logs and databases ────────────────────────────────────────────────────────
 *.log
 *.db
