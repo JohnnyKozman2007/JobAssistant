@@ -1,6 +1,11 @@
+from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(".env.local"), override=True)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from Backend.app.user_route import router as user_router
+from .user_route import router as user_router
 
 app = FastAPI(title="JobAssistant API")
 
@@ -17,4 +22,3 @@ app.include_router(user_router, prefix="/users", tags=["users"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
-

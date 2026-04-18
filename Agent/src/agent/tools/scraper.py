@@ -173,7 +173,7 @@ def _clean_linkedin_text(text: str) -> str:
     text = text[:earliest]
 
     # Remove "See who X has hired for this role" CTA lines near the top.
-    text = re.sub(r"See who .+ has hired for this role\n?", "", text)
+    text = re.sub(r"See who .+? has hired for this role\n?", "", text)
 
     return text.strip()
 
@@ -581,7 +581,7 @@ _HEURISTIC_JS_TEMPLATE = """
 
 def _build_heuristic_js() -> str:
     """Fill the JS template with the module-level noise constants."""
-    noise_tags_js = str(_NOISE_TAGS).replace("'", '"')  # Python list → JS array literal
+    noise_tags_js = json.dumps(_NOISE_TAGS)
     return _HEURISTIC_JS_TEMPLATE.format(
         noise_tags=noise_tags_js,
         noise_pattern=_NOISE_PATTERN,

@@ -22,7 +22,7 @@ import json
 import logging
 import re
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from agent.prompts import RESUME_SCORER_SYSTEM, RESUME_SCORER_USER_TEMPLATE
@@ -64,7 +64,7 @@ def _is_unavailable(exc: Exception) -> bool:
     return "503" in s or "UNAVAILABLE" in s
 
 
-async def _invoke_with_resilience(messages: list) -> object:
+async def _invoke_with_resilience(messages: list) -> AIMessage:
     """Call primary model with retry on 503; fall back to secondary on 429 or exhausted retries.
 
     Retry schedule for 503: 1 s → 2 s → give up → fallback.
@@ -105,6 +105,15 @@ async def _invoke_with_resilience(messages: list) -> object:
         ) from fallback_exc
 
 
+_REQUIRED_FIELDS = {"match_score", "matched_skills", "missing_skills", "experience_gap", "top_improvements", "summary"}
+
+
+def _validate_score_schema(result: dict) -> None:
+    missing = _REQUIRED_FIELDS - result.keys()
+    if missing:
+        raise ValueError(f"LLM response missing required fields: {missing}. Got: {list(result.keys())}")
+
+
 async def score_resume(jd_text: str, resume_text: str) -> dict:
     """Score a resume against a job description using Gemini 2.5 Flash.
 
@@ -138,7 +147,9 @@ async def score_resume(jd_text: str, resume_text: str) -> dict:
     ]
 
     response = await _invoke_with_resilience(messages)
-    return _parse_json(_extract_text(response.content))
+    result = _parse_json(_extract_text(response.content))
+    _validate_score_schema(result)
+    return result
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
