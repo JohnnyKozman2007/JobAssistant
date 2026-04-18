@@ -1,22 +1,25 @@
-from __future__ import annotations
-
+from supabase import create_client
 import os
+from dotenv import load_dotenv
 
-from supabase import Client, create_client
-
+load_dotenv()  # Loads API keys from .env file
 
 class Supabase:
-    """Small wrapper around the Supabase client used by the API routes."""
-
     def __init__(self) -> None:
         url = os.getenv("SUPABASE_URL")
-        service_key = os.getenv("SUPABASE_SECRET_KEY")
+        key = os.getenv("SUPABASE_SECRET_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL or SUPABASE_SECRET_KEY are not defined.")
+        self.supabase = create_client(url, key)
 
-        if not url or not service_key:
-            raise RuntimeError("SUPABASE_URL and SUPABASE_SECRET_KEY must be configured.")
+    def insert_resume(self, data: dict):
+        """Insert resume metadata into the 'resumes' table."""
+        return self.supabase.table("resumes").insert(data).execute()
 
-        self.client: Client = create_client(url, service_key)
-
+_instance: Supabase | None = None
 
 def get_db() -> Supabase:
-    return Supabase()
+    global _instance
+    if _instance is None:
+        _instance = Supabase()
+    return _instance
