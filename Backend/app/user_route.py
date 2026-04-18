@@ -15,6 +15,12 @@ AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://localhost:8001")
 class ScoreRequest(BaseModel):
     job_url: str
 
+
+class TailorAnswerRequest(BaseModel):
+    job_url: str
+    user_question: str
+
+
 @router.get("/{user_id}/resume")
 def get_resume_text(user_id: str, db: Supabase = Depends(get_db)):
     user = User(user_id)
@@ -48,12 +54,25 @@ async def upload_resume(
     user_id: str = None,
     db: Supabase = Depends(get_db)
 ):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    allowed_types = [
+        "application/pdf",
+        "application/msword",  # .doc
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"  # .docx
+    ]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and Word documents (.doc, .docx) are allowed"
+        )
     if not user_id:
         user_id = str(uuid.uuid4())
     file_path = f"{user_id}/{file.filename}"
     file_bytes = await file.read()
+
+    # Empty file validation
+    if len(file_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
     try:
         db.supabase.storage.from_("Resumes").upload(
             path=file_path,
@@ -82,3 +101,21 @@ async def upload_resume(
         "file_path": file_path,
         "user_id": user_id
     }
+
+@router.post("/{user_id}/answer")
+async def tailor_answer(user_id: str, body: TailorAnswerRequest):
+    """Forward the tailored answer request to the agent."""
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            response = await client.post(
+                f"{AGENT_BASE_URL}/answer",
+                params={"user_id": user_id},
+                json={"job_url": body.job_url, "user_question": body.user_question},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"Agent error: {e.response.text}")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Agent unreachable: {e}")
+
+    return response.json()
