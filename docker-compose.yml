@@ -15,19 +15,31 @@ services:
       dockerfile: Dockerfile
     working_dir: /app/Agent
     ports:
-      - 8888:8888
+      - "8001:8001"
+      - "8888:8888"
     volumes:
       - ./Agent:/app/Agent
-    command:
-      [
-        "jupyter",
-        "lab",
-        "--ip=0.0.0.0",
-        "--port",
-        "8888",
-        "--no-browser",
-        "--allow-root",
-      ]
+    env_file:
+      - .env
+    command: >
+      sh -c "uvicorn agent.server:app --host 0.0.0.0 --port 8001 --reload &
+             jupyter lab --ip=0.0.0.0 --port 8888 --no-browser --allow-root"
+
+  backend:
+    image: python:3.13-slim
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Backend:/app/Backend
+    env_file:
+      - .env
+    environment:
+      - AGENT_BASE_URL=${AGENT_BASE_URL}
+      - PYTHONPATH=/app
+    command: >
+      sh -c "pip install --no-cache-dir -r /app/Backend/requirements.txt &&
+             uvicorn Backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 volumes:
   vite_node_modules:
