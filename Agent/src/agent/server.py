@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 
-from agent.graph import State, create_graph
+from agent.graph import create_graph
+from agent.state import State, RequestType
 
 load_dotenv(find_dotenv())
 
@@ -25,19 +26,39 @@ class ScoreRequest(BaseModel):
     job_url: str
 
 
+class TailorAnswerRequest(BaseModel):
+    job_url: str
+    user_question: str
+
+
 @app.post("/score")
 async def score(user_id: str, body: ScoreRequest):
     """Score the user's saved resume against the given job posting."""
     config = {"configurable": {"thread_id": user_id}}
     try:
         result = await graph.ainvoke(
-            State(user_id=user_id, job_url=body.job_url),
-            config=config,
+            State(user_id=user_id, job_url=body.job_url, request_type=RequestType.score),
+            config=config, # type: ignore
         )
     except Exception as e:
         logger.exception("Score request failed for user %s", user_id)
         raise HTTPException(status_code=500, detail=str(e))
     return result["score_result"]
+
+
+@app.post("/answer")
+async def answer(user_id: str, body: TailorAnswerRequest):
+    """Answer a job-related question tailored to the user's resume."""
+    config = {"configurable": {"thread_id": user_id}}
+    try:
+        result = await graph.ainvoke(
+            State(user_id=user_id, job_url=body.job_url, user_question=body.user_question, request_type=RequestType.question), # type: ignore
+            config=config, # type: ignore
+        )
+    except Exception as e:
+        logger.exception("Answer request failed for user %s", user_id)
+        raise HTTPException(status_code=500, detail=str(e))
+    return result["ai_answer"]
 
 
 @app.get("/health")
