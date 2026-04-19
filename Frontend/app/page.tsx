@@ -8,6 +8,7 @@ import JobAnalyzer from "../components/JobAnalyzer";
 import MatchScoreCard from "../components/MatchScoreCard";
 import SaveProfilePrompt from "../components/SaveProfilePrompt";
 import AIAnswerGenerator from "../components/AIAnswerGenerator";
+import { scoreResume, tailorAnswer, uploadResume } from "../lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -16,23 +17,6 @@ interface AnalysisResult {
   strengths: string[];
   weaknesses: string[];
 }
-
-// ── Mock data ──────────────────────────────────────────────────────────────
-
-const MOCK_RESULT: AnalysisResult = {
-  score: 78,
-  strengths: [
-    "Strong alignment with required TypeScript & React skills",
-    "5+ years of frontend experience matches seniority level",
-    "Portfolio projects demonstrate relevant domain knowledge",
-    "Clear quantified achievements in past roles",
-  ],
-  weaknesses: [
-    "Missing explicit mention of GraphQL (listed as preferred)",
-    "No mention of CI/CD or DevOps experience",
-    "Team leadership examples could be more prominent",
-  ],
-};
 
 
 
@@ -48,21 +32,37 @@ export default function HomePage() {
   // Modal + results state
   const [showModal, setShowModal] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false);
   const [savePromptDismissed, setSavePromptDismissed] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   // ── File handling ──────────────────────────────────────────────────────
 
-  const handleFile = useCallback((file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     const valid = ["application/pdf", "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
     if (!valid.includes(file.type)) return alert("Please upload a PDF or DOC/DOCX file.");
     if (file.size > 10 * 1024 * 1024) return alert("File must be under 10 MB.");
     setFileName(file.name);
+    setIsUploading(true);
+    try {
+      const userId = getUserId();
+      await uploadResume(userId, file);
+      localStorage.setItem("resumeFileName", file.name);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Resume upload failed.");
+      setFileName(null);
+    } finally {
+      setIsUploading(false);
+    }
   }, []);
 
   const onDrop = useCallback(
@@ -75,10 +75,40 @@ export default function HomePage() {
     [handleFile]
   );
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  const getUserId = (): string => {
+    let id = localStorage.getItem("user_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("user_id", id);
+    }
+    return id;
+  };
+
   // ── Analyze ────────────────────────────────────────────────────────────
 
-  const handleAnalyze = () => {
-    setShowModal(true);
+  const handleAnalyze = async () => {
+    if (!jobUrl.trim()) {
+      setAnalysisError("Please enter a job URL.");
+      return;
+    }
+    setAnalysisError(null);
+    setIsAnalyzing(true);
+    try {
+      const userId = getUserId();
+      const result = await scoreResume(userId, jobUrl);
+      setAnalysisResult({
+        score: result.match_score,
+        strengths: result.matched_skills,
+        weaknesses: result.missing_skills,
+      });
+      setShowModal(true);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Analysis failed. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleCloseModal = () => {
@@ -93,11 +123,19 @@ export default function HomePage() {
 
   // ── AI Answer ──────────────────────────────────────────────────────────
 
-  const handleGenerateAnswer = () => {
-    if (!aiQuestion.trim()) return;
-    setAiAnswer(
-      `Based on your resume and the job description, here's a tailored response: You have demonstrated strong proficiency in the required skills through your previous roles. Highlight your experience with ${aiQuestion.toLowerCase().includes("team") ? "cross-functional collaboration and mentoring junior engineers" : "technical problem-solving and delivering measurable business impact"} to make a compelling case.`
-    );
+  const handleGenerateAnswer = async () => {
+    if (!aiQuestion.trim() || !jobUrl.trim()) return;
+    setIsGeneratingAnswer(true);
+    setAiAnswer(null);
+    try {
+      const userId = getUserId();
+      const answer = await tailorAnswer(userId, jobUrl, aiQuestion);
+      setAiAnswer(answer);
+    } catch (err) {
+      setAiAnswer(`Error: ${err instanceof Error ? err.message : "Failed to generate answer."}`);
+    } finally {
+      setIsGeneratingAnswer(false);
+    }
   };
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -179,10 +217,11 @@ export default function HomePage() {
               onJobUrlChange={setJobUrl}
               onJobDescriptionChange={setJobDescription}
               onAnalyze={handleAnalyze}
+              isAnalyzing={isAnalyzing || isUploading}
             />
 
             <ResumeUploader
-              fileName={fileName}
+              fileName={isUploading ? "Uploading…" : fileName}
               isDragging={isDragging}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -190,11 +229,42 @@ export default function HomePage() {
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={onDrop}
-              onUploadClick={() => fileInputRef.current?.click()}
-              onFileChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+              onUploadClick={() => !isUploading && fileInputRef.current?.click()}
+              onFileChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ""; }}
               fileInputRef={fileInputRef}
             />
           </div>
+
+          {/* ── Error message ── */}
+          {analysisError && (
+            <div
+              className="mb-6 rounded-xl px-4 py-3 text-sm"
+              style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.25)",
+                color: "#fca5a5",
+              }}
+            >
+              {analysisError}
+            </div>
+          )}
+
+          {/* ── Loading overlay ── */}
+          {isAnalyzing && (
+            <div
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5"
+              style={{ background: "rgba(4,7,18,0.82)", backdropFilter: "blur(8px)" }}
+            >
+              <div
+                className="w-14 h-14 rounded-full border-4 border-t-transparent animate-spin"
+                style={{ borderColor: "#6366f1", borderTopColor: "transparent" }}
+              />
+              <p className="text-sm font-medium" style={{ color: "#94a3b8" }}>
+                Analyzing your resume against the job posting…
+              </p>
+            </div>
+          )}
+
           {/* ── AI Results (revealed after modal close) ── */}
           {showResults && (
             <div ref={resultsRef} className="space-y-6 mt-4">
@@ -219,10 +289,11 @@ export default function HomePage() {
                   answer={aiAnswer}
                   onQuestionChange={setAiQuestion}
                   onGenerate={handleGenerateAnswer}
+                  isLoading={isGeneratingAnswer}
                 />
 
                 <MatchScoreCard
-                  score={MOCK_RESULT.score}
+                  score={analysisResult?.score ?? 0}
                   onViewDetails={() => setShowModal(true)}
                 />
               </div>
@@ -242,9 +313,9 @@ export default function HomePage() {
       </div>
 
       {/* ── Modal ── */}
-      {showModal && (
-      <AnalysisModal result={MOCK_RESULT} onClose={handleCloseModal} open={true} />
-    )}
+      {showModal && analysisResult && (
+        <AnalysisModal result={analysisResult} onClose={handleCloseModal} open={true} />
+      )}
     </>
   );
 }

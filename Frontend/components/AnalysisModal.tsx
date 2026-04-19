@@ -239,7 +239,7 @@ export default function AnalysisModal({
         >
           {/* Card shell */}
           <div
-            className="relative overflow-hidden rounded-2xl"
+            className="relative flex flex-col rounded-2xl overflow-hidden max-h-[90vh]"
             style={{
               background: "linear-gradient(160deg, #0f1320 0%, #0a0e1a 100%)",
               border: "1px solid rgba(255,255,255,0.07)",
@@ -257,7 +257,7 @@ export default function AnalysisModal({
             />
 
             {/* ── Header ── */}
-            <div className="px-7 pt-7 pb-5">
+            <div className="flex-shrink-0 px-7 pt-7 pb-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2
@@ -306,7 +306,7 @@ export default function AnalysisModal({
 
             {/* ── Score section ── */}
             <div
-              className="am-fade-up mx-7 mb-6 rounded-xl p-5 flex items-center gap-6"
+              className="am-fade-up flex-shrink-0 mx-7 mb-6 rounded-xl p-5 flex items-center gap-6"
               style={{
                 background: "rgba(255,255,255,0.03)",
                 border: "1px solid rgba(255,255,255,0.06)",
@@ -379,85 +379,88 @@ export default function AnalysisModal({
               </div>
             </div>
 
-            {/* ── Divider ── */}
-            <div
-              className="mx-7 h-px mb-5"
-              style={{ background: "rgba(255,255,255,0.05)" }}
-            />
+            {/* ── Scrollable content ── */}
+            <div className="overflow-y-auto flex-1 min-h-0">
+              {/* ── Divider ── */}
+              <div
+                className="mx-7 h-px mb-5"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+              />
 
-            {/* ── Strengths ── */}
-            <div
-              className="am-fade-up px-7 mb-5"
-              style={{ animationDelay: "0.16s" }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div
-                  className="w-1.5 h-4 rounded-full"
-                  style={{ background: "#22c55e" }}
-                />
-                <h3
-                  className="text-xs font-semibold uppercase tracking-widest"
-                  style={{ color: "#22c55e" }}
-                >
-                  Strengths
-                </h3>
-                <span
-                  className="ml-auto text-xs font-medium rounded-full px-2 py-0.5"
-                  style={{
-                    background: "rgba(34,197,94,0.12)",
-                    color: "#22c55e",
-                  }}
-                >
-                  {strengths.length}
-                </span>
+              {/* ── Strengths ── */}
+              <div
+                className="am-fade-up px-7 mb-5"
+                style={{ animationDelay: "0.16s" }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div
+                    className="w-1.5 h-4 rounded-full"
+                    style={{ background: "#22c55e" }}
+                  />
+                  <h3
+                    className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "#22c55e" }}
+                  >
+                    Strengths
+                  </h3>
+                  <span
+                    className="ml-auto text-xs font-medium rounded-full px-2 py-0.5"
+                    style={{
+                      background: "rgba(34,197,94,0.12)",
+                      color: "#22c55e",
+                    }}
+                  >
+                    {strengths.length}
+                  </span>
+                </div>
+                <ul className="space-y-2.5" role="list" aria-label="Strengths">
+                  {strengths.map((item, i) => (
+                    <ListItem key={i} icon="check" index={i}>
+                      {item}
+                    </ListItem>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-2.5" role="list" aria-label="Strengths">
-                {strengths.map((item, i) => (
-                  <ListItem key={i} icon="check" index={i}>
-                    {item}
-                  </ListItem>
-                ))}
-              </ul>
-            </div>
 
-            {/* ── Weaknesses ── */}
-            <div
-              className="am-fade-up px-7 mb-7"
-              style={{ animationDelay: "0.22s" }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div
-                  className="w-1.5 h-4 rounded-full"
-                  style={{ background: "#f59e0b" }}
-                />
-                <h3
-                  className="text-xs font-semibold uppercase tracking-widest"
-                  style={{ color: "#f59e0b" }}
-                >
-                  Areas to Improve
-                </h3>
-                <span
-                  className="ml-auto text-xs font-medium rounded-full px-2 py-0.5"
-                  style={{
-                    background: "rgba(245,158,11,0.12)",
-                    color: "#f59e0b",
-                  }}
-                >
-                  {weaknesses.length}
-                </span>
+              {/* ── Weaknesses ── */}
+              <div
+                className="am-fade-up px-7 mb-7"
+                style={{ animationDelay: "0.22s" }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div
+                    className="w-1.5 h-4 rounded-full"
+                    style={{ background: "#f59e0b" }}
+                  />
+                  <h3
+                    className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "#f59e0b" }}
+                  >
+                    Areas to Improve
+                  </h3>
+                  <span
+                    className="ml-auto text-xs font-medium rounded-full px-2 py-0.5"
+                    style={{
+                      background: "rgba(245,158,11,0.12)",
+                      color: "#f59e0b",
+                    }}
+                  >
+                    {weaknesses.length}
+                  </span>
+                </div>
+                <ul className="space-y-2.5" role="list" aria-label="Areas to improve">
+                  {weaknesses.map((item, i) => (
+                    <ListItem key={i} icon="warning" index={i}>
+                      {item}
+                    </ListItem>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-2.5" role="list" aria-label="Areas to improve">
-                {weaknesses.map((item, i) => (
-                  <ListItem key={i} icon="warning" index={i}>
-                    {item}
-                  </ListItem>
-                ))}
-              </ul>
             </div>
 
             {/* ── Footer ── */}
             <div
-              className="am-fade-up px-7 pb-7"
+              className="am-fade-up flex-shrink-0 px-7 pb-7"
               style={{ animationDelay: "0.28s" }}
             >
               <button

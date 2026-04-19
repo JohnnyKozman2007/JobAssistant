@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import MatchScoreCard from "../../components/MatchScoreCard";
 import AIAnswerGenerator from "../../components/AIAnswerGenerator";
+import { scoreResume, tailorAnswer } from "../../lib/api";
 
 import {
   Search,
@@ -20,22 +21,7 @@ type AnalysisResult = {
   verdict: string;
   strengths: string[];
   improvements: string[];
-};
-
-const MOCK_RESULT: AnalysisResult = {
-  score: 78,
-  verdict: "Good fit with a few gaps",
-  strengths: [
-    "Strong alignment with required TypeScript & React skills",
-    "5+ years of frontend experience matches seniority level",
-    "Portfolio projects demonstrate relevant domain knowledge",
-    "Clear quantified achievements in past roles",
-  ],
-  improvements: [
-    "Missing explicit mention of GraphQL (listed as preferred)",
-    "No mention of CI/CD or DevOps experience",
-    "Team leadership examples could be more prominent",
-  ],
+  summary: string;
 };
 
 export default function DashboardPage() {
@@ -43,19 +29,15 @@ export default function DashboardPage() {
   const resultsRef = useRef<HTMLDivElement>(null);
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
   const [jobUrl, setJobUrl] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
 
-  // Modal + results state
-  const [showModal, setShowModal] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [aiQuestion, setAiQuestion] = useState("");
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [savePromptDismissed, setSavePromptDismissed] = useState(false);
+  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false);
 
 
 
@@ -70,11 +52,28 @@ export default function DashboardPage() {
     }, 100);
   };
 
-  const handleGenerateAnswer = () => {
-    if (!aiQuestion.trim()) return;
-    setAiAnswer(
-      `Based on your resume and the job description, here's a tailored response: You have demonstrated strong proficiency in the required skills through your previous roles. Highlight your experience with ${aiQuestion.toLowerCase().includes("team") ? "cross-functional collaboration and mentoring junior engineers" : "technical problem-solving and delivering measurable business impact"} to make a compelling case.`
-    );
+  const getUserId = (): string => {
+    let id = localStorage.getItem("user_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("user_id", id);
+    }
+    return id;
+  };
+
+  const handleGenerateAnswer = async () => {
+    if (!aiQuestion.trim() || !jobUrl.trim()) return;
+    setIsGeneratingAnswer(true);
+    setAiAnswer(null);
+    try {
+      const userId = getUserId();
+      const answer = await tailorAnswer(userId, jobUrl, aiQuestion);
+      setAiAnswer(answer);
+    } catch (err) {
+      setAiAnswer(`Error: ${err instanceof Error ? err.message : "Failed to generate answer."}`);
+    } finally {
+      setIsGeneratingAnswer(false);
+    }
   };
 
   useEffect(() => {
@@ -85,75 +84,35 @@ export default function DashboardPage() {
   const handleAnalyze = async () => {
     setError("");
 
-    if (!jobUrl.trim() && !jobDescription.trim()) {
-      setError("Please enter a job URL or a job description.");
+    if (!jobUrl.trim()) {
+      setError("Please enter a job URL.");
       return;
     }
 
     setIsAnalyzing(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      const userId = getUserId();
+      const result = await scoreResume(userId, jobUrl);
 
-      const description = jobDescription.toLowerCase();
-
-      let score = 78;
-      const strengths: string[] = [];
-      const improvements: string[] = [];
-
-      if (description.includes("react")) {
-        strengths.push("Strong alignment with required React skills");
-        score += 2;
-      }
-      if (description.includes("typescript")) {
-        strengths.push("Strong alignment with required TypeScript skills");
-        score += 2;
-      }
-      if (description.includes("frontend")) {
-        strengths.push("Frontend background aligns well with the role");
-        score += 1;
-      }
-
-      if (!description.includes("graphql")) {
-        improvements.push("Missing explicit mention of GraphQL");
-      }
-      if (!description.includes("ci/cd") && !description.includes("devops")) {
-        improvements.push("No mention of CI/CD or DevOps experience");
-      }
-      if (!description.includes("lead") && !description.includes("leadership")) {
-        improvements.push("Leadership examples could be more prominent");
-      }
-
-      if (strengths.length === 0) {
-        strengths.push("General alignment with modern frontend requirements");
-        strengths.push("Resume appears relevant for a software-focused role");
-        strengths.push("Experience seems compatible with technical job postings");
-      }
-
-      if (improvements.length === 0) {
-        improvements.push("Add more quantified achievements to strengthen the profile");
-        improvements.push("Include more role-specific keywords from the posting");
-      }
-
-      const boundedScore = Math.min(95, Math.max(62, score));
       const verdict =
-        boundedScore >= 80
+        result.match_score >= 80
           ? "Excellent Match"
-          : boundedScore >= 70
+          : result.match_score >= 70
           ? "Strong Match"
           : "Moderate Match";
 
       setAnalysisResult({
-        score: boundedScore,
+        score: result.match_score,
         verdict,
-        strengths: strengths.slice(0, 4),
-        improvements: improvements.slice(0, 3),
+        strengths: result.matched_skills,
+        improvements: result.missing_skills,
+        summary: result.summary,
       });
-      setHasAnalyzed(true);
-      setShowResults(false); // hide results until modal is closed
-      setShowDetails(true);  // open modal first
-    } catch {
-      setError("Something went wrong while analyzing the job.");
+      setShowResults(false);
+      setShowDetails(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong while analyzing the job.");
     } finally {
       setIsAnalyzing(false);
     }

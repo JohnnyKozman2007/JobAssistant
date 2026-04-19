@@ -9,6 +9,7 @@ export interface AIAnswerGeneratorProps {
   answer: string | null;
   onQuestionChange: (value: string) => void;
   onGenerate: () => void;
+  isLoading?: boolean;
   className?: string;
 }
 
@@ -19,10 +20,11 @@ export default function AIAnswerGenerator({
   answer,
   onQuestionChange,
   onGenerate,
+  isLoading = false,
   className = "",
 }: AIAnswerGeneratorProps) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && question.trim()) {
+    if (e.key === "Enter" && question.trim() && !isLoading) {
       onGenerate();
     }
   };
@@ -89,7 +91,7 @@ export default function AIAnswerGenerator({
         <button
           type="button"
           onClick={onGenerate}
-          disabled={!question.trim()}
+          disabled={!question.trim() || isLoading}
           className="w-full rounded-xl px-6 py-3 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1320] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
           style={{ background: "#6366f1", color: "#fff" }}
           onMouseEnter={(e) => {
@@ -100,7 +102,7 @@ export default function AIAnswerGenerator({
             e.currentTarget.style.background = "#6366f1";
           }}
         >
-          Generate Answer
+          {isLoading ? "Generating..." : "Generate Answer"}
         </button>
       </div>
 
