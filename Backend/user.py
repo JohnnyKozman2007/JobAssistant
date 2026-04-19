@@ -13,7 +13,7 @@ class User:
         self.resume_bucket = os.getenv("SUPABASE_RESUME_BUCKET")
 
     def get_latest_resume(self, db: Supabase) -> tuple[str | None, bytes | None, str | None]:
-        storage = db.client.storage.from_(self._resolve_resume_bucket(db))
+        storage = db.supabase.storage.from_(self._resolve_resume_bucket(db))
         candidates = self._list_candidates(storage)
         if not candidates:
             return None, None, None
@@ -31,16 +31,16 @@ class User:
             return self.resume_bucket
 
         try:
-            buckets = db.client.storage.list_buckets()
+            buckets = db.supabase.storage.list_buckets()
         except Exception:
-            return "resumes"
+            return "Resumes"
 
         for bucket in buckets:
             name = bucket.get("name") if isinstance(bucket, dict) else getattr(bucket, "name", None)
             if isinstance(name, str) and name.lower() == "resumes":
                 return name
 
-        return "resumes"
+        return "Resumes"
 
     def _list_candidates(self, storage: Any) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
