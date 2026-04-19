@@ -16,7 +16,9 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
 
 async def fetch_resume(state: State) -> Dict[str, Any]:
     """Fetch the user's latest resume text from the backend."""
-    if not state["user_id"]:
+    if state.get("resume_text"):
+        return {}  # already provided (e.g. notebook), skip backend call
+    if not state.get("user_id"):
         raise ValueError("user_id is required")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{BACKEND_BASE_URL}/users/{state['user_id']}/resume")
@@ -42,9 +44,9 @@ async def run_scorer(state: State) -> Dict[str, Any]:
     return {"score_result": result}
 
 async def tailor_answer(state: State) -> Dict[str, Any]:
-    answer = await tailor_answer_question(
+    result = await tailor_answer_question(
         jd_text=state.get("job_description", ""),
         resume_text=state.get("resume_text", ""),
         user_question=state.get("user_question", ""),
     )
-    return {"ai_answer": answer}
+    return {"ai_answer": result.answer}

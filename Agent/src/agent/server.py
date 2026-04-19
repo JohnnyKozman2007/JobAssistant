@@ -58,7 +58,7 @@ async def answer(user_id: str, body: TailorAnswerRequest):
     except Exception as e:
         logger.exception("Answer request failed for user %s", user_id)
         raise HTTPException(status_code=500, detail=str(e))
-    return result["ai_answer"]
+    return {"answer": result["ai_answer"]}
 
 
 @app.get("/health")
