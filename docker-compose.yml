@@ -26,7 +26,9 @@ services:
              jupyter lab --ip=0.0.0.0 --port 8888 --no-browser --allow-root"
 
   backend:
-    image: python:3.13-slim
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
     working_dir: /app
     ports:
       - "8000:8000"
@@ -37,45 +39,7 @@ services:
     environment:
       - AGENT_BASE_URL=${AGENT_BASE_URL}
       - PYTHONPATH=/app
-    command: >
-      sh -c "pip install --no-cache-dir -r /app/Backend/requirements.txt &&
-             uvicorn Backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
-
-  jupyter:
-    build:
-      context: ./Backend
-      dockerfile: Dockerfile.dev
-    working_dir: /app
-    ports:
-      - "8889:8889"
-    volumes:
-      - ./Backend:/app/Backend
-    env_file:
-      - .env
-    command:
-      [
-        "jupyter",
-        "lab",
-        "--ip=0.0.0.0",
-        "--port",
-        "8889",
-        "--no-browser",
-        "--allow-root",
-      ]
-
-  backend:
-    build:
-      context: ./BackEnd
-      dockerfile: Dockerfile
-    ports:
-      - 8000:8000
-    volumes:
-      - ./BackEnd:/app/BackEnd
-    env_file:
-      - .env
-    environment:
-      - AGENT_BASE_URL=${AGENT_BASE_URL}
-    command: uvicorn BackEnd.app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn Backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   vite_node_modules:
