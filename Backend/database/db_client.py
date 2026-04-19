@@ -16,6 +16,12 @@ class Supabase:
         """Insert resume metadata into the 'resumes' table."""
         return self.supabase.table("resumes").insert(data).execute()
 
+    def get_resumes_by_user(self, user_id: str):
+        return self.supabase.table("resumes").select("file_path").eq("user_id", user_id).execute()
+
+    def delete_resumes_by_user(self, user_id: str):
+        return self.supabase.table("resumes").delete().eq("user_id", user_id).execute()
+
 _instance: Supabase | None = None
 
 def get_db() -> Supabase:

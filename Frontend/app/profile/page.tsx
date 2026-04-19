@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { uploadResume } from "../../lib/api";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -34,6 +35,8 @@ export default function ProfilePage() {
   const [preferredIndustries, setPreferredIndustries] = useState("");
 
   const [resumeFileName, setResumeFileName] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     setFullName(localStorage.getItem("profile_fullName") || "");
@@ -117,12 +120,33 @@ export default function ProfilePage() {
     router.push("/dashboard");
   };
 
-  const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const getUserId = useCallback((): string => {
+    let id = localStorage.getItem("user_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("user_id", id);
+    }
+    return id;
+  }, []);
+
+  const handleResumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    localStorage.setItem("resumeFileName", file.name);
-    setResumeFileName(file.name);
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const userId = getUserId();
+      await uploadResume(userId, file);
+      localStorage.setItem("resumeFileName", file.name);
+      setResumeFileName(file.name);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setIsUploading(false);
+      // Reset input so the same file can be re-selected if needed
+      e.target.value = "";
+    }
   };
 
   const inputClass =
@@ -335,10 +359,15 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white/85 transition hover:bg-white/[0.08] hover:text-white"
+                disabled={isUploading}
+                className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-medium text-white/85 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload New Resume
+                {isUploading ? "Uploading..." : "Upload New Resume"}
               </button>
+
+              {uploadError && (
+                <p className="mt-3 text-sm text-red-400">{uploadError}</p>
+              )}
 
               <input
                 ref={fileInputRef}

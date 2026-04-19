@@ -73,6 +73,15 @@ async def upload_resume(
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+    existing = db.get_resumes_by_user(user_id)
+    if existing.data:
+        old_paths: list[str] = [str(r["file_path"]) for r in existing.data if r.get("file_path")]  # type: ignore[union-attr]
+        try:
+            db.supabase.storage.from_("Resumes").remove(old_paths)
+        except Exception:
+            pass
+        db.delete_resumes_by_user(user_id)
+
     try:
         db.supabase.storage.from_("Resumes").upload(
             path=file_path,

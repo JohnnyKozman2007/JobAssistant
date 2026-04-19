@@ -10,11 +10,18 @@ export interface JobAnalyzerProps {
   onJobUrlChange: (value: string) => void;
   onJobDescriptionChange: (value: string) => void;
   onAnalyze: () => void;
+  isAnalyzing?: boolean;
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+function Label({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
   return (
     <label
       htmlFor={htmlFor}
@@ -99,6 +106,7 @@ export default function JobAnalyzer({
   onJobUrlChange,
   onJobDescriptionChange,
   onAnalyze,
+  isAnalyzing = false,
 }: JobAnalyzerProps) {
   return (
     <div
@@ -113,11 +121,7 @@ export default function JobAnalyzer({
           aria-hidden="true"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle
-              cx="7" cy="7" r="4.5"
-              stroke="#818cf8"
-              strokeWidth="1.25"
-            />
+            <circle cx="7" cy="7" r="4.5" stroke="#818cf8" strokeWidth="1.25" />
             <path
               d="M10.5 10.5L13 13"
               stroke="#818cf8"
@@ -166,12 +170,16 @@ export default function JobAnalyzer({
         <button
           type="button"
           onClick={onAnalyze}
-          className="w-full rounded-xl px-6 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1320]"
+          disabled={isAnalyzing}
+          className="w-full rounded-xl px-6 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f1320] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
           style={{ background: "#6366f1", color: "#fff" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#4f52e0")}
+          onMouseEnter={(e) => {
+            if (!e.currentTarget.disabled)
+              e.currentTarget.style.background = "#4f52e0";
+          }}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#6366f1")}
         >
-          Analyze Job Match →
+          {isAnalyzing ? "Analyzing..." : "Analyze Job Match →"}
         </button>
       </div>
     </div>
