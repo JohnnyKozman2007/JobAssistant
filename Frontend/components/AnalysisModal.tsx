@@ -407,16 +407,6 @@ export default function AnalysisModal({
                 <p className="text-xs mt-2" style={{ color: "#334155" }}>
                   {score}% alignment with requirements
                 </p>
-                {summary && (
-                  <p className="text-xs mt-3 leading-relaxed" style={{ color: "#475569" }}>
-                    {summary}
-                  </p>
-                )}
-                {experience_gap && (
-                  <p className="text-xs mt-1.5 italic" style={{ color: "#374151" }}>
-                    {experience_gap}
-                  </p>
-                )}
               </div>
             </div>
 
@@ -427,6 +417,22 @@ export default function AnalysisModal({
                 className="mx-7 h-px mb-5"
                 style={{ background: "rgba(255,255,255,0.05)" }}
               />
+
+              {/* ── Summary & experience gap ── */}
+              {(summary || experience_gap) && (
+                <div className="am-fade-up px-7 mb-5" style={{ animationDelay: "0.12s" }}>
+                  {summary && (
+                    <p className="text-xs leading-relaxed" style={{ color: "#475569" }}>
+                      {summary}
+                    </p>
+                  )}
+                  {experience_gap && (
+                    <p className="text-xs mt-1.5 italic" style={{ color: "#374151" }}>
+                      {experience_gap}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* ── Strengths ── */}
               <div
