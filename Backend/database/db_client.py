@@ -21,6 +21,19 @@ class Supabase:
 
     def delete_resumes_by_user(self, user_id: str):
         return self.supabase.table("resumes").delete().eq("user_id", user_id).execute()
+    
+    # User management methods
+    def create_user(self, data: dict):
+        return self.supabase.table("users").insert(data).execute()
+
+    def get_user(self, user_id: str):
+        return self.supabase.table("users").select("*").eq("id", user_id).execute()
+
+    def update_user(self, user_id: str, data: dict):
+        return self.supabase.table("users").update(data).eq("id", user_id).execute()
+
+    def delete_user(self, user_id: str):
+        return self.supabase.table("users").delete().eq("id", user_id).execute()
 
 _instance: Supabase | None = None
 
