@@ -25,9 +25,6 @@ router = APIRouter()
 
 AGENT_BASE_URL = os.getenv("AGENT_BASE_URL", "http://localhost:8001")
 
-# Mock database for demo purposes
-mock_users_db = {}
-
 
 # Keep backward compatibility with existing schemas
 class ScoreRequest(BaseModel):
@@ -50,67 +47,83 @@ def get_resume_text(user_id: str, db: Supabase = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+
+def _normalize_user_row(user_row: dict) -> UserResponse:
+    return UserResponse(**user_row)
+
+
+def _get_user_or_404(user_id: str, db: Supabase) -> dict:
+    response = db.get_user(user_id)
+    user_rows = response.data or []
+    if not user_rows:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
+    return user_rows[0]
+
 # User profile endpoints
 @router.post("", response_model=UserResponse)
-def create_user(user_data: UserCreate) -> UserResponse:
+def create_user(user_data: UserCreate, db: Supabase = Depends(get_db)) -> UserResponse:
     """Create a new user profile."""
     user_id = str(uuid4())
     now = datetime.utcnow()
-    
-    user_response = UserResponse(
-        user_id=user_id,
-        email=user_data.email,
-        first_name=user_data.first_name,
-        last_name=user_data.last_name,
-        phone_number=user_data.phone_number,
-        location=user_data.location,
-        desired_job_title=user_data.desired_job_title,
-        years_of_experience=user_data.years_of_experience,
-        created_at=now,
-        updated_at=now,
-        has_resume=False,
-    )
-    
-    # Store in mock database
-    mock_users_db[user_id] = user_response.model_dump()
-    
-    return user_response
+    user_payload = {
+        "user_id": user_id,
+        "email": user_data.email,
+        "first_name": user_data.first_name,
+        "last_name": user_data.last_name,
+        "phone_number": user_data.phone_number,
+        "location": user_data.location,
+        "desired_job_title": user_data.desired_job_title,
+        "years_of_experience": user_data.years_of_experience,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "has_resume": False,
+    }
+
+    try:
+        response = db.insert_user(user_payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {exc}")
+
+    created_rows = response.data or []
+    if not created_rows:
+        raise HTTPException(status_code=500, detail="User was not created.")
+
+    return _normalize_user_row(created_rows[0])
 
 # Get and update user profile endpoints
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: str) -> UserResponse:
+def get_user(user_id: str, db: Supabase = Depends(get_db)) -> UserResponse:
     """Fetch a user profile by ID."""
-    if user_id not in mock_users_db:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
-    
-    user_data = mock_users_db[user_id]
-    return UserResponse(**user_data)
+    user_data = _get_user_or_404(user_id, db)
+    return _normalize_user_row(user_data)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
-def update_user(user_id: str, user_data: UserUpdate) -> UserResponse:
+def update_user(user_id: str, user_data: UserUpdate, db: Supabase = Depends(get_db)) -> UserResponse:
     """Update a user profile."""
-    if user_id not in mock_users_db:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
-    
-    existing_user = mock_users_db[user_id]
-    
-    # Update only provided fields
     update_data = user_data.model_dump(exclude_unset=True)
-    update_data["updated_at"] = datetime.utcnow()
-    
-    existing_user.update(update_data)
-    mock_users_db[user_id] = existing_user
-    
-    return UserResponse(**existing_user)
+    if not update_data:
+        return _normalize_user_row(_get_user_or_404(user_id, db))
+
+    update_data["updated_at"] = datetime.utcnow().isoformat()
+
+    try:
+        response = db.update_user(user_id, update_data)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {exc}")
+
+    updated_rows = response.data or []
+    if not updated_rows:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
+
+    return _normalize_user_row(updated_rows[0])
 
 
 # Resume upload and update endpoints
 @router.post("/{user_id}/resume", response_model=ResumeResponse)
-async def upload_resume(user_id: str, file: UploadFile = File(...)) -> ResumeResponse:
+async def upload_resume(user_id: str, file: UploadFile = File(...), db: Supabase = Depends(get_db)) -> ResumeResponse:
     """Upload and store a resume file for a user."""
-    if user_id not in mock_users_db:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
+    _get_user_or_404(user_id, db)
     
     # Validate file type
     allowed_types = {
@@ -132,19 +145,19 @@ async def upload_resume(user_id: str, file: UploadFile = File(...)) -> ResumeRes
         uploaded_at=datetime.utcnow(),
         mimetype=file.content_type,
     )
-    
-    # Update user's has_resume flag
-    if user_id in mock_users_db:
-        mock_users_db[user_id]["has_resume"] = True
+
+    try:
+        db.update_user(user_id, {"has_resume": True, "updated_at": datetime.utcnow().isoformat()})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update user resume flag: {exc}")
     
     return resume_response
 
 
 @router.put("/{user_id}/resume", response_model=ResumeResponse)
-async def update_resume(user_id: str, file: UploadFile = File(...)) -> ResumeResponse:
+async def update_resume(user_id: str, file: UploadFile = File(...), db: Supabase = Depends(get_db)) -> ResumeResponse:
     """Update a user's resume file."""
-    if user_id not in mock_users_db:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
+    _get_user_or_404(user_id, db)
     
     # Validate file type
     allowed_types = {
@@ -187,60 +200,6 @@ async def score_resume(user_id: str, body: ScoreRequest):
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Agent unreachable: {e}")
     return response.json()
-
-@router.post("/upload")
-async def upload_resume(
-    file: UploadFile = File(...),
-    user_id: str = None,
-    db: Supabase = Depends(get_db)
-):
-    allowed_types = [
-        "application/pdf",
-        "application/msword",  # .doc
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"  # .docx
-    ]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF and Word documents (.doc, .docx) are allowed"
-        )
-    if not user_id:
-        user_id = str(uuid.uuid4())
-    file_path = f"{user_id}/{file.filename}"
-    file_bytes = await file.read()
-
-    # Empty file validation
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
-    try:
-        db.supabase.storage.from_("Resumes").upload(
-            path=file_path,
-            file=file_bytes,
-            file_options={"content-type": file.content_type}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(e)}")
-    try:
-        parsed_text = Helper.parse_resume_text(file_bytes, file.content_type)
-    except Exception:
-        parsed_text = None
-    resume_data = {
-        "user_id": user_id,
-        "file_path": file_path,
-        "original_filename": file.filename,
-        "mime_type": file.content_type,
-        "parsed_text": parsed_text
-    }
-    try:
-        db.insert_resume(resume_data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database insert failed: {str(e)}")
-    return {
-        "message": "Upload successful",
-        "file_path": file_path,
-        "user_id": user_id
-    }
 
 @router.post("/{user_id}/answer")
 async def tailor_answer(user_id: str, body: TailorAnswerRequest):

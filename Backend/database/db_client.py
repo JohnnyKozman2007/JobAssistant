@@ -1,8 +1,7 @@
-from supabase import create_client
 import os
-from dotenv import load_dotenv
+from typing import Any
 
-load_dotenv()  # Loads API keys from .env file
+from supabase import create_client
 
 class Supabase:
     def __init__(self) -> None:
@@ -11,6 +10,18 @@ class Supabase:
         if not url or not key:
             raise ValueError("SUPABASE_URL or SUPABASE_SECRET_KEY are not defined.")
         self.supabase = create_client(url, key)
+
+    def insert_user(self, data: dict[str, Any]):
+        """Insert a user profile into the users table."""
+        return self.supabase.table("users").insert(data).execute()
+
+    def get_user(self, user_id: str):
+        """Fetch a user profile by user_id."""
+        return self.supabase.table("users").select("*").eq("user_id", user_id).execute()
+
+    def update_user(self, user_id: str, data: dict[str, Any]):
+        """Update a user profile by user_id."""
+        return self.supabase.table("users").update(data).eq("user_id", user_id).execute()
 
     def insert_resume(self, data: dict):
         """Insert resume metadata into the 'resumes' table."""
