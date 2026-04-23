@@ -50,5 +50,6 @@ export async function tailorAnswer(
     const detail = await res.text();
     throw new Error(detail || `Request failed with status ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  return data.answer;
 }
