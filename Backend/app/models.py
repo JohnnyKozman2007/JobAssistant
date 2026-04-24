@@ -24,3 +24,30 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProfileCreate(BaseModel):
+    work_experience: list[str] | str = Field(...)
+    skills: list[str] | str = Field(...)
+    desired_job_type: str = Field(..., min_length=1)
+    preferred_industry: str = Field(..., min_length=1)
+
+
+class ProfileUpdate(BaseModel):
+    work_experience: Optional[list[str] | str] = Field(None)
+    skills: Optional[list[str] | str] = Field(None)
+    desired_job_type: Optional[str] = Field(None, min_length=1)
+    preferred_industry: Optional[str] = Field(None, min_length=1)
+
+
+class ProfileResponse(BaseModel):
+    id: str
+    user_id: str
+    work_experience: list[str] | str
+    skills: list[str] | str
+    desired_job_type: str
+    preferred_industry: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

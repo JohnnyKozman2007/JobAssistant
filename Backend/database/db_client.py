@@ -44,6 +44,19 @@ class Supabase:
     def delete_user(self, user_id: str):
         return self.supabase.table("users").delete().eq("id", user_id).execute()
 
+    # Profile management methods
+    def create_profile(self, data: dict):
+        return self.supabase.table("profiles").insert(data).execute()
+
+    def get_profile_by_user(self, user_id: str):
+        return self.supabase.table("profiles").select("*").eq("user_id", user_id).execute()
+
+    def update_profile(self, profile_id: str, data: dict):
+        return self.supabase.table("profiles").update(data).eq("id", profile_id).execute()
+
+    def delete_profile(self, profile_id: str):
+        return self.supabase.table("profiles").delete().eq("id", profile_id).execute()
+
 _instance: Supabase | None = None
 
 def get_db() -> Supabase:
