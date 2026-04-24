@@ -1,8 +1,17 @@
 from supabase import create_client
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()  # Loads API keys from .env file
+
+
+def _normalize_supabase_url(raw_url: str) -> str:
+    """Accept either project URL or REST URL and normalize to project base URL."""
+    parsed = urlparse(raw_url.strip())
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return raw_url.rstrip("/")
 
 class Supabase:
     def __init__(self) -> None:
@@ -10,7 +19,7 @@ class Supabase:
         key = os.getenv("SUPABASE_SECRET_KEY")
         if not url or not key:
             raise ValueError("SUPABASE_URL or SUPABASE_SECRET_KEY are not defined.")
-        self.supabase = create_client(url, key)
+        self.supabase = create_client(_normalize_supabase_url(url), key)
 
     def insert_resume(self, data: dict):
         """Insert resume metadata into the 'resumes' table."""
